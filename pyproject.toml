@@ -1,0 +1,12 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "light_engine_characterization"
+version = "0.0.1"
+authors = [
+  { name="John Rollinson", email="jrollinson@celestial.ai" },
+]
+description = "Light engine characterization automation"
+requires-python = ">=3.8"
