@@ -6,6 +6,7 @@ log.addHandler(logging.NullHandler())
 import sys
 import tempfile
 from datetime import datetime
+import time
 
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
@@ -52,7 +53,7 @@ class MainWindow(ManagedWindow):
         self.setWindowTitle("Molex Light Engine Characterization")
 
         dt = datetime.now()
-        self.filename = f"light_engine_{datetime.date(dt)}_{datetime.time(dt)}"
+        self.filename = f"light_engine_"
         self.directory = "~/measurement_data/light_engine/molex/"
         self.store_measurement = True
         self.file_input.extensions = ["csv", "txt", "data"]
@@ -60,6 +61,7 @@ class MainWindow(ManagedWindow):
 
     def queue(self, procedure=None):
         """Queue a measurement based on the parameters in the input-widget."""
+        self.logger.info("Queuing experiment.")
         # Check if the filename and the directory inputs are available
         if not self.enable_file_input:
             raise NotImplementedError(
@@ -72,7 +74,7 @@ class MainWindow(ManagedWindow):
 
         if self.store_measurement:
             try:
-                filename = f"{self.file_input.filename_base}.{self.file_input.filename_extension}"
+                filename = f"{self.file_input.filename_base}_{procedure.light_engine_id}_chan{procedure.channel}_{procedure.measurement_date}_{procedure.measurement_time}.{self.file_input.filename_extension}"
             except KeyError as E:
                 if not E.args[0].startswith(
                     "The following placeholder-keys are not valid:"

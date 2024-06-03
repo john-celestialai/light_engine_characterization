@@ -70,8 +70,8 @@ class MolexLECharacterization(Procedure):
     resolution_vbw = 1000
 
     # Measurement metadata
-    measurement_date = Metadata("Date", fget=datetime.date(datetime.now()))
-    measurement_time = Metadata("Time", fget=datetime.time(datetime.now()))
+    measurement_date = Metadata("Date", fget=datetime.now().strftime(r"%Y%m%d"))
+    measurement_time = Metadata("Time", fget=datetime.now().strftime(r"%H%M%S"))
 
     # Measurement data
     bias_current_ma = Measurable("bias_current_ma")
@@ -107,6 +107,7 @@ class MolexLECharacterization(Procedure):
 
         Connect to all instruments and set any necessary configuration parameters.
         """
+        self.logger.info("Beginning startup procedure.")
         if not bool(self.light_engine_id):
             raise ValueError("No light engine ID specified.")
 
@@ -114,12 +115,13 @@ class MolexLECharacterization(Procedure):
         self.tec = TECSource5240("ASRL7::INSTR")
 
         # Configure the OSA parameters
-        self.osa = AnritsuMS9740A("placeholder_addr")
+        self.osa = AnritsuMS9740A("TCPIP0::10.10.60.150::inst0::INSTR")
         self.osa.wavelength_start = self.wavelength_start
         self.osa.wavelength_stop = self.wavelength_stop
         self.osa.sampling_points = self.wavelength_points
         self.osa.resolution = self.wavelength_resolution
         self.osa.resolution_vbw = self.resolution_vbw
+        self.logger.info("Connected to OSA.")
 
         # Connect to the other devices
         self.smu = Keithley2400("ASRL5::INSTR")
@@ -136,13 +138,15 @@ class MolexLECharacterization(Procedure):
             # Create the table if it does not exist
             try:
                 LightEngineMeasurement.__table__.create(self.engine)
-            except:
-                pass
+            except Exception as e:
+                self.logger.error(e)
         except Exception as e:
             self.logger.error(e)
             self.logger.warning(
                 "Could not connect to database, data will only be saved locally."
             )
+            
+        self.logger.info("Measurement startup complete.")
 
     def execute(self):
         """Execute the light engine characterization procedure."""
@@ -236,11 +240,12 @@ class MolexLECharacterization(Procedure):
         # Disable TEC
         if self.tec:
             self.tec.output_enable = False
-            self.tec.close()
+            # self.tec.close()
 
         # Disconnect from OSA and SMU
         if self.osa:
             self.osa.close()
+        if self.smu:
             self.smu.close()
 
         # Disconnect from the database
