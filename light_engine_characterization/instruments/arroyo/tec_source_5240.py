@@ -31,3 +31,23 @@ class TECSource5240(SCPIMixin, Instrument):
             map_values=True,
             values={True: 1, False: 0},
         )
+        
+    def set_temperature(self, temperature):
+        self.write(f'TEC:T {temperature}')
+
+    def get_temperature(self):
+        temperature = self.ask(f'TEC:T?')
+        return float(temperature)
+        
+    def set_output_on(self):
+        self.write(f'TEC:OUTput {1}')
+    
+    def set_output_off(self):
+        self.write(f'TEC:OUTput {0}')
+
+
+if __name__ == "__main__":
+    tec = TECSource5240('ASRL4::INSTR')
+    tec.set_temperature(25)
+    tec.set_output_on()
+    print(tec.get_temperature())

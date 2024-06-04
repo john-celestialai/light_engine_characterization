@@ -13,11 +13,11 @@ from pymeasure.experiment import (
     Parameter,
     Procedure,
 )
-from pymeasure.instruments.anritsu import AnritsuMS9740A
 from pymeasure.instruments.keithley import Keithley2400
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
+from light_engine_characterization.instruments.anritsu import AnritsuMS9740B
 from light_engine_characterization.instruments.arroyo import TECSource5240
 from light_engine_characterization.instruments.custom import ZeusController
 from light_engine_characterization.tables import LightEngineMeasurement
@@ -30,17 +30,22 @@ database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_d
 
 
 def detect_instruments():
-    rm = visa.ResourceManager("@sim")
-    ports = rm.list_resources()
-    instrument_ids = []
-    for port in ports:
+    rm = visa.ResourceManager()
+    resources = rm.list_resources()
+    instruments = {}
+    for resource in resources:
         try:
-            instrument_ids.append(rm.open_resource(port).query("*IDN?"))
+            resource_id = rm.open_resource(resource).query("*IDN?")
+            if "anritsu" in resource_id.lower():
+                instruments["anritsu"] = resource
+            elif "arroyo" in resource_id.lower():
+                instruments["arroyo"] = resource
+            elif "keithley" in resource_id.lower():
+                instruments["keithley"] = resource
         except Exception as e:
-            print(e)
             continue
 
-    return instrument_ids
+    return instruments
 
 
 class MolexLECharacterization(Procedure):
@@ -83,11 +88,12 @@ class MolexLECharacterization(Procedure):
     wavelength_stop = 1585
     wavelength_points = 2001
     wavelength_resolution = 0.03
-    resolution_vbw = 1000
+    resolution_vbw = "1kHz"
 
     # Measurement metadata
-    measurement_date = Metadata("Date", fget=lambda: datetime.now().strftime(r"%Y%m%d"))
-    measurement_time = Metadata("Time", fget=lambda: datetime.now().strftime(r"%H%M%S"))
+    # TODO: Metadata does not seem to be fully supported yet
+    # measurement_date = Metadata("Date", fget=lambda: datetime.now().strftime(r"%Y%m%d"))
+    # measurement_time = Metadata("Time", fget=lambda: datetime.now().strftime(r"%H%M%S"))
 
     # Measurement data
     bias_current_ma = Measurable("bias_current_ma")
@@ -100,7 +106,7 @@ class MolexLECharacterization(Procedure):
     power_dbm = Measurable("power_dbm")
     power_uw = Measurable("power_uw")
     wavelength_peak_nm = Measurable("wavelength_peak_nm")
-    power_peak_nm = Measurable("power_peak_nm")
+    power_peak_dbm = Measurable("power_peak_dbm")
     smsr_db = Measurable("smsr_db")
     smsr_linewidth_nm = Measurable("smsr_linewidth_nm")
     linewidth_3db_nm = Measurable("linewidth_3db_nm")
@@ -119,8 +125,8 @@ class MolexLECharacterization(Procedure):
         self.session = None
 
         # Evaluate metadata
-        # self.measurement_date.evaluate()
-        # self.measurement_time.evaluate()
+        self.measurement_date = None
+        self.measurement_time = None
         log.debug("Light engine characterization procedure initialized.")
 
     def startup(self):
@@ -130,12 +136,13 @@ class MolexLECharacterization(Procedure):
         """
         log.debug("Beginning startup procedure.")
 
-        # TODO: Auto-detect instruments
-        self.tec = TECSource5240("ASRL7::INSTR")
+        instruments = detect_instruments()
+
+        self.tec = TECSource5240(instruments["arroyo"])
         log.debug("Connected to TEC.")
 
         # Configure the OSA parameters
-        self.osa = AnritsuMS9740A("TCPIP0::10.10.60.150::inst0::INSTR")
+        self.osa = AnritsuMS9740B(instruments["anritsu"])
         self.osa.wavelength_start = self.wavelength_start
         self.osa.wavelength_stop = self.wavelength_stop
         self.osa.sampling_points = self.wavelength_points
@@ -144,7 +151,7 @@ class MolexLECharacterization(Procedure):
         log.debug("Connected to OSA.")
 
         # Connect to SMU
-        self.smu = Keithley2400("ASRL5::INSTR")
+        self.smu = Keithley2400(instruments["keithley"])
         log.debug("Connected to SMU.")
 
         # Connect to Zeus controller
@@ -158,17 +165,23 @@ class MolexLECharacterization(Procedure):
             self.engine = create_engine(database_address)
             self.session = Session(self.engine)
             self.session.begin()
+            log.debug("Connected to database.")
 
             # Create the table if it does not exist
-            try:
-                LightEngineMeasurement.__table__.create(self.engine)
-            except Exception as e:
-                log.error(e)
+            if not inspect(self.engine).has_table(
+                LightEngineMeasurement.__tablename__,
+                schema=LightEngineMeasurement.__table_args__["schema"],
+            ):
+                try:
+                    LightEngineMeasurement.__table__.create(self.engine)
+                except Exception as e:
+                    log.error(e)
         except Exception as e:
             log.error(e)
             log.warning(
                 "Could not connect to database, data will only be saved locally."
             )
+            self.session = None
 
         log.info("Measurement startup complete.")
 
@@ -177,21 +190,28 @@ class MolexLECharacterization(Procedure):
 
         for i, temperature in enumerate(self.temperature_steps):
             log.info(f"Starting bias sweep at {temperature}degC")
-            self.tec.temperature = temperature
-            self.tec.output_enable = True
-            time.sleep(self.temp_settling_time)
+            self.tec.set_temperature(temperature)
+            self.tec.set_output_on()
+            self.smu.enable_source = True
+
+            log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
+            self.wait(self.temp_settling_time)
+            if self.should_stop():
+                log.info("User aborted the procedure.")
+                break
 
             for j, bias_current in enumerate(self.bias_current_steps):
                 start_date = self.measurement_date
                 start_time = self.measurement_time
 
                 # Set the light engine channel and bias current
+                log.debug(f"Setting bias current to {bias_current}mA")
                 query_string = f"light_engine.set_laser_ma(LEChannel.LE{self.channel},{bias_current})"
                 self.zeus.write_read(query_string)
 
                 # Read the temperatures, voltages, and currents
-                tec_temp_c = self.tec.temperature
-                cathode_voltage_v = self.smu.measure_voltage(auto_range=False)
+                tec_temp_c = self.tec.get_temperature()
+                cathode_voltage_v = self.read_voltage()
                 ambient_temp_c, light_engine_temp_c = (
                     self.zeus.get_light_engine_temperatures()
                 )
@@ -205,17 +225,22 @@ class MolexLECharacterization(Procedure):
                 power_uw = 10 ** (power_dbm / 10) * 1000
 
                 # Get the spectral peak (wavelength, power)
-                peak_wavelength_nm, peak_power_nm = self.measure_peak()
+                osa_peak = self.osa.measure_peak()
+                peak_wavelength_nm = osa_peak[0]
+                peak_power_dbm = osa_peak[1]
+                log.debug(
+                    f"Peak wavelength: {peak_wavelength_nm}nm, {peak_power_dbm}dBm"
+                )
 
                 # If the peak power is greater than -30dBm, also measure the SMSR and linewidth
-                if peak_power_nm > -30:
+                if peak_power_dbm > -30:
                     smsr_linewidth_nm, smsr_db = self.osa.measure_smsr()
                     linewidth_3db_nm = self.osa.measure_linewidth(3)
                     linewidth_20db_nm = self.osa.measure_linewidth(20)
                 else:
-                    smsr_linewidth_nm, smsr_db = None, None
-                    linewidth_3db_nm = None
-                    linewidth_20db_nm = None
+                    smsr_linewidth_nm, smsr_db = np.nan, np.nan
+                    linewidth_3db_nm = np.nan
+                    linewidth_20db_nm = np.nan
 
                 # Record the measurement
                 le_measurement = {
@@ -229,19 +254,29 @@ class MolexLECharacterization(Procedure):
                     "ambient_temp_c": ambient_temp_c,
                     "light_engine_temp_c": light_engine_temp_c,
                     "mpd_current_ma": mpd_current_ma,
-                    "wavelength_nm": wavelength_nm,
-                    "power_dbm": power_dbm,
-                    "power_uw": power_uw,
+                    "wavelength_nm": wavelength_nm.tolist(),
+                    "power_dbm": power_dbm.tolist(),
+                    "power_uw": power_uw.tolist(),
                     "wavelength_peak_nm": peak_wavelength_nm,
-                    "power_peak_nm": peak_power_nm,
+                    "power_peak_dbm": peak_power_dbm,
                     "smsr_db": smsr_db,
                     "smsr_linewidth_nm": smsr_linewidth_nm,
                     "linewidth_3db_nm": linewidth_3db_nm,
                     "linewidth_20db_nm": linewidth_20db_nm,
                 }
                 k = i * self.n_bias_steps + j
-                self.emit("result", le_measurement)
-                self.emit("progress", k / self.iterations)
+                self.emit("results", le_measurement)
+                self.emit("progress", 100 * k / self.iterations)
+
+                if self.session:
+                    # le_measurement["wavelength_nm"] = le_measurement[
+                    #     "wavelength_nm"
+                    # ].to_list()
+                    # le_measurement["power_dbm"] = le_measurement["power_dbm"].to_list()
+                    # le_measurement["power_uw"] = le_measurement["power_uw"].to_list()
+                    db_row = LightEngineMeasurement(**le_measurement)
+                    self.session.add(db_row)
+                    self.session.commit()
 
                 if self.should_stop():
                     break
@@ -263,14 +298,15 @@ class MolexLECharacterization(Procedure):
 
         # Disable TEC
         if self.tec:
-            self.tec.output_enable = False
+            self.tec.set_temperature(25)
+            self.tec.set_output_off()
             # self.tec.close()
 
         # Disconnect from OSA and SMU
-        if self.osa:
-            self.osa.close()
-        if self.smu:
-            self.smu.close()
+        # if self.osa:
+        #     self.osa.close()
+        # if self.smu:
+        #     self.smu.close()
 
         # Disconnect from the database
         if self.session:
@@ -302,18 +338,18 @@ class MolexLECharacterization(Procedure):
     @property
     def bias_current_steps(self) -> np.ndarray:
         """Array of current bias points to step through."""
-        if self.coarse_enable:
+        if not self.coarse_enable:
             bias_currents = np.arange(
                 self.bias_start, self.bias_stop + self.bias_step, self.bias_step
             )
         else:
             coarse_steps = np.arange(
-                self.temp_start, self.coarse_stop, self.coarse_step
+                self.bias_start, self.coarse_stop, self.coarse_step
             )
             fine_steps = np.arange(
-                self.coarse_stop, self.temp_stop + self.temp_step, self.temp_step
+                self.coarse_stop, self.bias_stop + self.bias_step, self.bias_step
             )
-            bias_currents = np.concatenate([coarse_steps, fine_steps])
+            bias_currents = np.append(coarse_steps, fine_steps)
         return bias_currents
 
     @property
@@ -323,4 +359,34 @@ class MolexLECharacterization(Procedure):
 
     @property
     def iterations(self) -> int:
-        return self.n_temp_steps * self.bias_current_steps
+        return self.n_temp_steps * self.n_bias_steps
+
+    def wait(self, wait_time):
+        start = time.time()
+        while time.time() - start < wait_time:
+            if self.should_stop():
+                break
+            time.sleep(1)
+
+    def read_voltage(self):
+        """Quickfix function to implement the SMU read voltage procedure."""
+        # TODO: Integrate this into the SMU driver
+        self.smu.write(f":SOUR:FUNC CURR")
+        self.smu.write(f":SOUR:CURR:MODE FIXED")
+        self.smu.write(r':SENS:FUNC "VOLT"')
+        self.smu.write(f":SOUR:CURR:RANG MIN")
+        self.smu.write(f":SOUR:CURR:LEV 0")
+        self.smu.write(f":SENS:VOLT:PROT 10")
+        self.smu.write(f":OUTP ON")
+        voltage_v = self.smu.ask(f":READ?").replace("\n", "")
+        self.smu.write(f":OUTP OFF")
+        return voltage_v
+
+
+# if __name__ == "__main__":
+# query_string = "light_engine.set_laser_ma(LEChannel.LE" + str(Channel) + "," + str(bias_current[j]) + ")"
+# SSH_ZEUS.write_read(query_string)
+# T_read = tec.get_temperature()
+# Voltage_V = read_voltage()
+# Ambient_C, LE_C = SSH_ZEUS.get_light_engine_temperatures()
+# Mpd_mA = SSH_ZEUS.get_mpd_readout(Channel)

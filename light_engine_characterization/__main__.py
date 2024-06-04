@@ -2,7 +2,7 @@ import logging
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 import sys
 import tempfile
@@ -26,12 +26,12 @@ class MainWindow(ManagedWindow):
                 "channel",
                 "temp_start",
                 "temp_stop",
+                "temp_step",
                 "temp_settling_time",
                 "bias_start",
                 "bias_stop",
                 "bias_step",
                 "coarse_enable",
-                "coarse_stop",
                 "coarse_stop",
                 "coarse_step",
             ],
@@ -41,14 +41,16 @@ class MainWindow(ManagedWindow):
                 "bias_current_ma",
                 "voltage_v",
                 "tec_temp_c",
+                "ambient_temp_c",
+                "light_engine_temp_c",
                 "wavelength_peak_nm",
-                "power_peak_nm",
+                "power_peak_dbm",
                 "smsr_db",
                 "smsr_linewidth_nm",
                 "linewidth_3db_nm",
                 "linewidth_20db_nm",
             ],
-            x_axis="bias_current_ma",
+            x_axis="power_peak_dbm",
             y_axis="wavelength_peak_nm",
         )
         self.setWindowTitle("Molex Light Engine Characterization")

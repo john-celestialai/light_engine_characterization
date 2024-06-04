@@ -50,7 +50,7 @@ class ZeusController:
             self.interact = interact
 
             time.sleep(0.1)  # do not remove
-            print("\n\n\nsending login for sudo-------- \n")
+            # print("\n\n\nsending login for sudo-------- \n")
             interact.send(f"sudo -i")
             time.sleep(0.1)  # do not remove
 

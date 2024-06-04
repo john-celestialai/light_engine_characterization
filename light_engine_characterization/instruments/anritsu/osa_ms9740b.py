@@ -1,4 +1,5 @@
 from pymeasure.instruments.anritsu import AnritsuMS9740A
+import time
 
 
 class AnritsuMS9740B(AnritsuMS9740A):
@@ -14,16 +15,16 @@ class AnritsuMS9740B(AnritsuMS9740A):
     def measure_smsr(self):
         """Measure the side-mode suppression ratio of the OSA sweep."""
         self.analysis_mode = "SMSR"
-        result = self.analysis_result.split(",")
+        result = self.analysis_result
         smsr_delta_lambda = float(result[0])
-        smsr_db = float(result[1].replace("DBM", ""))
+        smsr_db = result[1]
         return smsr_delta_lambda, smsr_db
 
     def measure_linewidth(self, delta_db):
         """Measure the linewidth of the peak wavelength at peak_power_dbm - delta_db."""
         self.analysis_mode = f"ENV,{delta_db:0.1f}"
-        result = self.analysis_result.split(",")
-        linewidth = float(result[1].replace("DBM", ""))
+        result = self.analysis_result
+        linewidth = result[1]
         return linewidth
 
 
