@@ -2,11 +2,12 @@ import logging
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
+log.setLevel(logging.DEBUG)
 
 import sys
 import tempfile
 from datetime import datetime
-import time
+from pathlib import Path
 
 from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
@@ -52,16 +53,15 @@ class MainWindow(ManagedWindow):
         )
         self.setWindowTitle("Molex Light Engine Characterization")
 
-        dt = datetime.now()
-        self.filename = f"light_engine_"
+        self.filename = f"light_engine"
         self.directory = "~/measurement_data/light_engine/molex/"
         self.store_measurement = True
-        self.file_input.extensions = ["csv", "txt", "data"]
+        self.file_input.extensions = [".csv", ".txt", ".data"]
         self.file_input.filename_fixed = True
 
     def queue(self, procedure=None):
         """Queue a measurement based on the parameters in the input-widget."""
-        self.logger.info("Queuing experiment.")
+        log.debug("Queuing experiment.")
         # Check if the filename and the directory inputs are available
         if not self.enable_file_input:
             raise NotImplementedError(
@@ -72,9 +72,33 @@ class MainWindow(ManagedWindow):
         if procedure is None:
             procedure = self.make_procedure()
 
+        if not bool(procedure.light_engine_id):
+            log.error("No light engine ID specified.")
+            raise ValueError("No light engine ID specified.")
+
+        # Initialize date and time metadata
+        dt = datetime.now()
+        procedure.measurement_date = dt.strftime(r"%Y%m%d")
+        procedure.measurement_time = dt.strftime(r"%H%M%S")
+
+        log.debug("Generating measurement filename.")
         if self.store_measurement:
             try:
-                filename = f"{self.file_input.filename_base}_{procedure.light_engine_id}_chan{procedure.channel}_{procedure.measurement_date}_{procedure.measurement_time}.{self.file_input.filename_extension}"
+                filename_attrs = [
+                    self.file_input.filename_base,
+                    procedure.light_engine_id,
+                    procedure.channel,
+                    procedure.measurement_date,
+                    procedure.measurement_time,
+                ]
+                filename_attrs = [str(attr) for attr in filename_attrs]
+                filename = Path(self.file_input.directory.replace("\n", "")) / Path(
+                    "_".join(filename_attrs)
+                ).with_suffix("." + self.file_input.filename_extension)
+                filename = filename.expanduser()
+
+                # Create the parent directory if it doesn't exist
+                filename.parent.mkdir(parents=True, exist_ok=True)
             except KeyError as E:
                 if not E.args[0].startswith(
                     "The following placeholder-keys are not valid:"
@@ -84,11 +108,15 @@ class MainWindow(ManagedWindow):
                 return
         else:
             filename = tempfile.mktemp(prefix="TempFile_", suffix=".csv")
+        log.debug(f"Filename: {filename}")
 
+        log.debug("Initializing procedure.")
         results = Results(procedure, filename)
 
+        log.debug("Generating and queuing new experiment.")
         experiment = self.new_experiment(results)
         self.manager.queue(experiment)
+        log.debug("Queuing sequence completed.")
 
 
 if __name__ == "__main__":

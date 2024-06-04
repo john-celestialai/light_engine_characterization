@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 import numpy as np
+import pyvisa as visa
 from pymeasure.experiment import (
     BooleanParameter,
     FloatParameter,
@@ -23,8 +24,23 @@ from light_engine_characterization.tables import LightEngineMeasurement
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
+log.setLevel(logging.DEBUG)
 
 database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_dev"
+
+
+def detect_instruments():
+    rm = visa.ResourceManager("@sim")
+    ports = rm.list_resources()
+    instrument_ids = []
+    for port in ports:
+        try:
+            instrument_ids.append(rm.open_resource(port).query("*IDN?"))
+        except Exception as e:
+            print(e)
+            continue
+
+    return instrument_ids
 
 
 class MolexLECharacterization(Procedure):
@@ -70,8 +86,8 @@ class MolexLECharacterization(Procedure):
     resolution_vbw = 1000
 
     # Measurement metadata
-    measurement_date = Metadata("Date", fget=datetime.now().strftime(r"%Y%m%d"))
-    measurement_time = Metadata("Time", fget=datetime.now().strftime(r"%H%M%S"))
+    measurement_date = Metadata("Date", fget=lambda: datetime.now().strftime(r"%Y%m%d"))
+    measurement_time = Metadata("Time", fget=lambda: datetime.now().strftime(r"%H%M%S"))
 
     # Measurement data
     bias_current_ma = Measurable("bias_current_ma")
@@ -102,17 +118,21 @@ class MolexLECharacterization(Procedure):
         self.engine = None
         self.session = None
 
+        # Evaluate metadata
+        # self.measurement_date.evaluate()
+        # self.measurement_time.evaluate()
+        log.debug("Light engine characterization procedure initialized.")
+
     def startup(self):
         """Measurement startup procedure.
 
         Connect to all instruments and set any necessary configuration parameters.
         """
-        self.logger.info("Beginning startup procedure.")
-        if not bool(self.light_engine_id):
-            raise ValueError("No light engine ID specified.")
+        log.debug("Beginning startup procedure.")
 
         # TODO: Auto-detect instruments
         self.tec = TECSource5240("ASRL7::INSTR")
+        log.debug("Connected to TEC.")
 
         # Configure the OSA parameters
         self.osa = AnritsuMS9740A("TCPIP0::10.10.60.150::inst0::INSTR")
@@ -121,13 +141,17 @@ class MolexLECharacterization(Procedure):
         self.osa.sampling_points = self.wavelength_points
         self.osa.resolution = self.wavelength_resolution
         self.osa.resolution_vbw = self.resolution_vbw
-        self.logger.info("Connected to OSA.")
+        log.debug("Connected to OSA.")
 
-        # Connect to the other devices
+        # Connect to SMU
         self.smu = Keithley2400("ASRL5::INSTR")
+        log.debug("Connected to SMU.")
+
+        # Connect to Zeus controller
         self.zeus = ZeusController()
         self.zeus.open_session("pynq1")
         self.zeus.write_read("fan.set_le_duty_cycle(90)")
+        log.debug("Connected to Zeus controller.")
 
         # Attempt to connect to the database
         try:
@@ -139,14 +163,14 @@ class MolexLECharacterization(Procedure):
             try:
                 LightEngineMeasurement.__table__.create(self.engine)
             except Exception as e:
-                self.logger.error(e)
+                log.error(e)
         except Exception as e:
-            self.logger.error(e)
-            self.logger.warning(
+            log.error(e)
+            log.warning(
                 "Could not connect to database, data will only be saved locally."
             )
-            
-        self.logger.info("Measurement startup complete.")
+
+        log.info("Measurement startup complete.")
 
     def execute(self):
         """Execute the light engine characterization procedure."""
@@ -255,6 +279,13 @@ class MolexLECharacterization(Procedure):
         # Parent shutdown procedure
         super().shutdown()
         log.info("Shutdown procedure complete.")
+
+    def autodetect_instruments(self):
+        """Detect all available instruments and their corresponding ports.
+
+        Iterates over all connected VISA instruments and queries their instrument ID.
+        Returns a dictionary containing the instrument ID and port number.
+        Raises an error if not all required instruments are detected."""
 
     @property
     def temperature_steps(self) -> np.ndarray:
