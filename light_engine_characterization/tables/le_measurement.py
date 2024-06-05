@@ -1,8 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import Date, Integer, Time, ARRAY, Float
 import numpy as np
+from sqlalchemy import ARRAY, Date, Float, Integer, Time
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_dev"
 
 
 class Base(DeclarativeBase):

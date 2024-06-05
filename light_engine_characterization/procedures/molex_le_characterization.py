@@ -20,13 +20,15 @@ from sqlalchemy.orm import Session
 from light_engine_characterization.instruments.anritsu import AnritsuMS9740B
 from light_engine_characterization.instruments.arroyo import TECSource5240
 from light_engine_characterization.instruments.custom import ZeusController
-from light_engine_characterization.tables import LightEngineMeasurement
+from light_engine_characterization.tables import (
+    LightEngineMeasurement,
+    database_address,
+)
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 log.setLevel(logging.INFO)
 
-database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_dev"
 data_columns = LightEngineMeasurement.__table__.columns.keys()
 data_columns = list(
     map(lambda x: x.replace("bias_current_ma", "Bias Current (mA)"), data_columns)
