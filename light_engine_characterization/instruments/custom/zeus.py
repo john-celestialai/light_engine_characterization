@@ -104,6 +104,23 @@ class ZeusController:
         mpd_mA = float(answer.split(" ")[1].split("°C")[0])
         return mpd_mA
 
+    def get_voltage_readout(self, channel):
+        adc_lut = [
+            "A_LDO_WCCMN",
+            "A_LDO_SCCMN",
+            "A_LDO_ECCMN",
+            "A_LDO_NCCMN",
+            "SW_PIC_APROBE_2",
+            "SW_PIC_APROBE_1",
+            "NE_PIC_APROBE_2",
+            "NE_PIC_APROBE_1",
+        ]
+        query = f"adc.{adc_lut[channel]}.print()"
+        self.write_read(query)
+        answer = self.interact.current_output_clean
+        voltage_v = float(answer.split(" ")[1].split("V")[0])
+        return voltage_v
+
     def close(self):
         try:
             self.client.close()  # we dont want to close

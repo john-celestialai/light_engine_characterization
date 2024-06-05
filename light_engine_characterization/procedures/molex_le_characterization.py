@@ -24,9 +24,15 @@ from light_engine_characterization.tables import LightEngineMeasurement
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_dev"
+data_columns = LightEngineMeasurement.__table__.columns.keys()
+data_columns = list(
+    map(lambda x: x.replace("bias_current_ma", "Bias Current (mA)"), data_columns)
+)
+data_columns = list(map(lambda x: x.replace("voltage_v", "Voltage (V)"), data_columns))
+print(data_columns)
 
 
 def detect_instruments():
@@ -96,23 +102,23 @@ class MolexLECharacterization(Procedure):
     # measurement_time = Metadata("Time", fget=lambda: datetime.now().strftime(r"%H%M%S"))
 
     # Measurement data
-    bias_current_ma = Measurable("bias_current_ma")
-    voltage_v = Measurable("voltage_v")
-    tec_temp_c = Measurable("tec_temp_c")
-    ambient_temp_c = Measurable("ambient_temp_c")
-    light_engine_temp_c = Measurable("light_engine_temp_c")
-    mpd_current_ma = Measurable("mpd_current_ma")
-    wavelength_nm = Measurable("wavelength_nm")
-    power_dbm = Measurable("power_dbm")
-    power_uw = Measurable("power_uw")
-    wavelength_peak_nm = Measurable("wavelength_peak_nm")
-    power_peak_dbm = Measurable("power_peak_dbm")
-    smsr_db = Measurable("smsr_db")
-    smsr_linewidth_nm = Measurable("smsr_linewidth_nm")
-    linewidth_3db_nm = Measurable("linewidth_3db_nm")
-    linewidth_20db_nm = Measurable("linewidth_20db_nm")
+    # bias_current_ma = FloatParameter("Bias Current (mA)")
+    # voltage_v = FloatParameter("Voltage (V)")
+    # tec_temp_c = Measurable("tec_temp_c")
+    # ambient_temp_c = Measurable("ambient_temp_c")
+    # light_engine_temp_c = Measurable("light_engine_temp_c")
+    # mpd_current_ma = Measurable("mpd_current_ma")
+    # wavelength_nm = Measurable("wavelength_nm")
+    # power_dbm = Measurable("power_dbm")
+    # power_uw = Measurable("power_uw")
+    # wavelength_peak_nm = Measurable("wavelength_peak_nm")
+    # power_peak_dbm = Measurable("power_peak_dbm")
+    # smsr_db = Measurable("smsr_db")
+    # smsr_linewidth_nm = Measurable("smsr_linewidth_nm")
+    # linewidth_3db_nm = Measurable("linewidth_3db_nm")
+    # linewidth_20db_nm = Measurable("linewidth_20db_nm")
 
-    DATA_COLUMNS = LightEngineMeasurement.__table__.columns.keys()
+    DATA_COLUMNS = data_columns
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -151,8 +157,8 @@ class MolexLECharacterization(Procedure):
         log.debug("Connected to OSA.")
 
         # Connect to SMU
-        self.smu = Keithley2400(instruments["keithley"])
-        log.debug("Connected to SMU.")
+        # self.smu = Keithley2400(instruments["keithley"])
+        # log.debug("Connected to SMU.")
 
         # Connect to Zeus controller
         self.zeus = ZeusController()
@@ -192,7 +198,7 @@ class MolexLECharacterization(Procedure):
             log.info(f"Starting bias sweep at {temperature}degC")
             self.tec.set_temperature(temperature)
             self.tec.set_output_on()
-            self.smu.enable_source = True
+            # self.smu.enable_source = True
 
             log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
             self.wait(self.temp_settling_time)
@@ -211,7 +217,8 @@ class MolexLECharacterization(Procedure):
 
                 # Read the temperatures, voltages, and currents
                 tec_temp_c = self.tec.get_temperature()
-                cathode_voltage_v = self.read_voltage()
+                # cathode_voltage_v = self.read_voltage()
+                cathode_voltage_v = self.zeus.get_voltage_readout(self.channel)
                 ambient_temp_c, light_engine_temp_c = (
                     self.zeus.get_light_engine_temperatures()
                 )
@@ -243,13 +250,14 @@ class MolexLECharacterization(Procedure):
                     linewidth_20db_nm = np.nan
 
                 # Record the measurement
+                # self.bias_current_ma = bias_current
                 le_measurement = {
                     "light_engine_id": self.light_engine_id,
                     "channel": self.channel,
                     "date": start_date,
                     "time": start_time,
-                    "bias_current_ma": bias_current,
-                    "voltage_v": cathode_voltage_v,
+                    "Bias Current (mA)": bias_current,
+                    "Voltage (V)": cathode_voltage_v,
                     "tec_temp_c": tec_temp_c,
                     "ambient_temp_c": ambient_temp_c,
                     "light_engine_temp_c": light_engine_temp_c,
@@ -269,11 +277,10 @@ class MolexLECharacterization(Procedure):
                 self.emit("progress", 100 * k / self.iterations)
 
                 if self.session:
-                    # le_measurement["wavelength_nm"] = le_measurement[
-                    #     "wavelength_nm"
-                    # ].to_list()
-                    # le_measurement["power_dbm"] = le_measurement["power_dbm"].to_list()
-                    # le_measurement["power_uw"] = le_measurement["power_uw"].to_list()
+                    le_measurement["bias_current_ma"] = le_measurement.pop(
+                        "Bias Current (mA)"
+                    )
+                    le_measurement["voltage_v"] = le_measurement.pop("Voltage (V)")
                     db_row = LightEngineMeasurement(**le_measurement)
                     self.session.add(db_row)
                     self.session.commit()
@@ -383,10 +390,5 @@ class MolexLECharacterization(Procedure):
         return voltage_v
 
 
-# if __name__ == "__main__":
-# query_string = "light_engine.set_laser_ma(LEChannel.LE" + str(Channel) + "," + str(bias_current[j]) + ")"
-# SSH_ZEUS.write_read(query_string)
-# T_read = tec.get_temperature()
-# Voltage_V = read_voltage()
-# Ambient_C, LE_C = SSH_ZEUS.get_light_engine_temperatures()
-# Mpd_mA = SSH_ZEUS.get_mpd_readout(Channel)
+if __name__ == "__main__":
+    print(data_columns)
