@@ -126,3 +126,13 @@ class ZeusController:
             self.client.close()  # we dont want to close
         except Exception:
             print("trouble closing ssh client")
+
+
+if __name__ == "__main__":
+    zeus = ZeusController()
+    zeus.open_session("pynq1")
+    zeus.write_read("fan.set_le_duty_cycle(90)")
+    query_string = f"light_engine.set_laser_ma(LEChannel.LE0,0)"
+    zeus.write_read(query_string)
+    zeus.close()
+

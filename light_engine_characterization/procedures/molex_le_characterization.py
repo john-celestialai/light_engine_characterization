@@ -32,7 +32,6 @@ data_columns = list(
     map(lambda x: x.replace("bias_current_ma", "Bias Current (mA)"), data_columns)
 )
 data_columns = list(map(lambda x: x.replace("voltage_v", "Voltage (V)"), data_columns))
-print(data_columns)
 
 
 def detect_instruments():
@@ -41,7 +40,9 @@ def detect_instruments():
     instruments = {}
     for resource in resources:
         try:
-            resource_id = rm.open_resource(resource).query("*IDN?")
+            res = rm.open_resource(resource)
+            res.write_termination = '\n'
+            resource_id = res.query("*IDN?")
             if "anritsu" in resource_id.lower():
                 instruments["anritsu"] = resource
             elif "arroyo" in resource_id.lower():
@@ -66,13 +67,13 @@ class MolexLECharacterization(Procedure):
         "Temperature Start", units="°C", minimum=20, maximum=90, decimals=1, default=25
     )
     temp_stop = FloatParameter(
-        "Temperature Stop", units="°C", minimum=20, maximum=90, decimals=1, default=85
+        "Temperature Stop", units="°C", minimum=20, maximum=90, decimals=1, default=75
     )
     temp_step = FloatParameter(
         "Temperature Step", units="°C", minimum=1, decimals=1, default=10
     )
     temp_settling_time = IntegerParameter(
-        "Temperature Settling Time", units="s", default=90
+        "Temperature Settling Time", units="s", default=30
     )
 
     # Current bias sweep settings
@@ -130,6 +131,8 @@ class MolexLECharacterization(Procedure):
         self.engine = None
         self.session = None
 
+        self.tec_pid = None
+
         # Evaluate metadata
         self.measurement_date = None
         self.measurement_time = None
@@ -145,6 +148,7 @@ class MolexLECharacterization(Procedure):
         instruments = detect_instruments()
 
         self.tec = TECSource5240(instruments["arroyo"])
+        self.tec_pid = self.tec.pid_params
         log.debug("Connected to TEC.")
 
         # Configure the OSA parameters
@@ -201,7 +205,7 @@ class MolexLECharacterization(Procedure):
             # self.smu.enable_source = True
 
             log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
-            self.wait(self.temp_settling_time)
+            self.wait_for_tec(temperature, self.temp_settling_time)
             if self.should_stop():
                 log.info("User aborted the procedure.")
                 break
@@ -225,7 +229,14 @@ class MolexLECharacterization(Procedure):
                 mpd_current_ma = self.zeus.get_mpd_readout(self.channel)
 
                 # Trigger a single OSA sweep and retrieve the result
-                self.osa.single_sweep()
+                sweep_successful = False
+                while not sweep_successful:
+                    try:
+                        self.osa.single_sweep()
+                        sweep_successful = True
+                    except RuntimeWarning:
+                        log.warning("Sweep timed out, re-running sweep")
+
                 wavelength_nm, power_dbm = self.osa.read_memory()
                 wavelength_nm = np.array(wavelength_nm)
                 power_dbm = np.array(power_dbm)
@@ -258,6 +269,7 @@ class MolexLECharacterization(Procedure):
                     "time": start_time,
                     "Bias Current (mA)": bias_current,
                     "Voltage (V)": cathode_voltage_v,
+                    "tec_pid": self.tec_pid,
                     "tec_temp_c": tec_temp_c,
                     "ambient_temp_c": ambient_temp_c,
                     "light_engine_temp_c": light_engine_temp_c,
@@ -300,6 +312,7 @@ class MolexLECharacterization(Procedure):
         # Disable light engine
         if self.zeus:
             query_string = f"light_engine.set_laser_ma(LEChannel.LE{self.channel},0)"
+            self.zeus.write_read("fan.set_le_duty_cycle(90)")
             self.zeus.write_read(query_string)
             self.zeus.close()
 
@@ -368,12 +381,26 @@ class MolexLECharacterization(Procedure):
     def iterations(self) -> int:
         return self.n_temp_steps * self.n_bias_steps
 
-    def wait(self, wait_time):
-        start = time.time()
-        while time.time() - start < wait_time:
-            if self.should_stop():
+    def wait_for_tec(self, target_temp, t_settle, t_sleep=0.5, n=600, tol=0.1):
+        """Wait for the TEC to reach the target temperature, then let it settle for the specified amount of time.
+        
+        Raises RuntimeError if the target temp is not reached in the specified time period (default 5min)."""
+        success = False
+        for _ in range(n):
+            tec_temp = self.tec.get_temperature()
+            if tec_temp > target_temp - tol:
+                success = True
                 break
-            time.sleep(1)
+            elif self.should_stop():
+                break
+            time.sleep(t_sleep)
+            
+        if success:
+            log.info(f"Target temperature reached, settling for {t_settle}s")
+            time.sleep(t_sleep)
+        else:
+            raise RuntimeError("Could not reach target TEC temperature.")
+            
 
     def read_voltage(self):
         """Quickfix function to implement the SMU read voltage procedure."""
@@ -389,6 +416,3 @@ class MolexLECharacterization(Procedure):
         self.smu.write(f":OUTP OFF")
         return voltage_v
 
-
-if __name__ == "__main__":
-    print(data_columns)

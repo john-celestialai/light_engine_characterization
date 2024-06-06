@@ -10,7 +10,7 @@ class Base(DeclarativeBase):
 
 
 class LightEngineMeasurement(Base):
-    __tablename__ = "light_engine"
+    __tablename__ = "molex"
     __table_args__ = {"schema": "lightengine"}
 
     measurement_id: Mapped[int] = mapped_column(
@@ -22,6 +22,7 @@ class LightEngineMeasurement(Base):
     time: Mapped[datetime.time] = mapped_column(Time)
     bias_current_ma: Mapped[float]
     voltage_v: Mapped[float]
+    tec_pid: Mapped[list | None] = mapped_column(ARRAY(Float), nullable=True)
     tec_temp_c: Mapped[float]
     ambient_temp_c: Mapped[float]
     light_engine_temp_c: Mapped[float]

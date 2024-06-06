@@ -1,5 +1,9 @@
 from pymeasure.instruments.anritsu import AnritsuMS9740A
 import time
+import logging
+
+log = logging.getLogger(__name__)
+log.addHandler(logging.NullHandler())
 
 
 class AnritsuMS9740B(AnritsuMS9740A):
@@ -26,6 +30,29 @@ class AnritsuMS9740B(AnritsuMS9740A):
         result = self.analysis_result
         linewidth = result[1]
         return linewidth
+    
+    def wait_for_sweep(self, n=20, delay=0.5):
+        """Wait for a sweep to stop.
+
+        This is performed by checking bit 1 of the ESR2.
+        """
+        log.debug("Waiting for spectrum sweep")
+
+        while self.esr2 != 3 and n > 0:
+            log.debug(f"Wait for sweep [{n}]")
+            # log.debug("ESR2: {}".format(esr2))
+            time.sleep(delay)
+            n -= 1
+
+        if n <= 0:
+            raise RuntimeWarning(f"Sweep Timeout Occurred ({int(delay * n)} s)")
+
+    def single_sweep(self, **kwargs):
+        """Perform a single sweep and wait for completion."""
+        log.debug("Performing a Spectrum Sweep")
+        self.clear()
+        self.write('SSI')
+        self.wait_for_sweep(**kwargs)
 
 
 class OSA_MS9740B:

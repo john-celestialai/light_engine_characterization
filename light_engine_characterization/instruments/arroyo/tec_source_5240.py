@@ -12,25 +12,32 @@ class TECSource5240(SCPIMixin, Instrument):
         kwargs.setdefault("write_termination", "\n")
         super().__init__(adapter, name, **kwargs)
 
-        self.temperature = Instrument.control(
-            "TEC:T?",
-            "TEC:T %g",
-            """The temperature of the TEC.
-            
-            Setting this property sets the temperature set point, getting this property 
-            returns the actual temperature.
-            """,
-            get_process=lambda v: float(v),
-        )
+    ########### Instrument Parameters ################################################
+    temperature = Instrument.control(
+        "TEC:T?",
+        "TEC:T %g",
+        """The temperature of the TEC.
+        
+        Setting this property sets the temperature set point, getting this property 
+        returns the actual temperature.
+        """,
+        get_process=lambda v: float(v),
+    )
 
-        self.output_enabled = Instrument.control(
-            "TEC:OUT?",
-            "TEC:OUT %d",
-            """Whether the instrument output is enabled (boolean).""",
-            validator=strict_discrete_set,
-            map_values=True,
-            values={True: 1, False: 0},
-        )
+    output_enabled = Instrument.control(
+        "TEC:OUT?",
+        "TEC:OUT %d",
+        """Whether the instrument output is enabled (boolean).""",
+        validator=strict_discrete_set,
+        map_values=True,
+        values={True: 1, False: 0},
+    )
+    
+    pid_params = Instrument.measurement(
+        "TEC:PID?",
+        """PID coefficients used for control loop.""",
+        get_process=lambda x: [float(v) for v in x]
+    )
         
     def set_temperature(self, temperature):
         self.write(f'TEC:T {temperature}')
@@ -44,10 +51,11 @@ class TECSource5240(SCPIMixin, Instrument):
     
     def set_output_off(self):
         self.write(f'TEC:OUTput {0}')
+        
+    def get_pid_params(self):
+        return self.ask("TEC:PID?")
 
 
 if __name__ == "__main__":
     tec = TECSource5240('ASRL4::INSTR')
-    tec.set_temperature(25)
-    tec.set_output_on()
-    print(tec.get_temperature())
+    print(tec.pid_params)
