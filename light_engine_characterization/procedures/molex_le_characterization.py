@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 import numpy as np
+import pymsteams
 import pyvisa as visa
 from pymeasure.experiment import (
     BooleanParameter,
@@ -25,6 +26,13 @@ from light_engine_characterization.tables import (
     database_address,
 )
 
+teams_address = (
+    "https://celestialai.webhook.office.com/webhookb2/"
+    "8cb3d0ed-2d5f-4852-b21f-451dc3552a65@1f01dda0-08ff-4642-9764-7ebe444cecb7/"
+    "IncomingWebhook/4027f23ded4644c29ccfe49cea069397/"
+    "4f39bb7b-e2a8-4f49-9421-80a2e79d44e7"
+)
+
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 log.setLevel(logging.INFO)
@@ -43,7 +51,7 @@ def detect_instruments():
     for resource in resources:
         try:
             res = rm.open_resource(resource)
-            res.write_termination = '\n'
+            res.write_termination = "\n"
             resource_id = res.query("*IDN?")
             if "anritsu" in resource_id.lower():
                 instruments["anritsu"] = resource
@@ -139,6 +147,8 @@ class MolexLECharacterization(Procedure):
         self.measurement_date = None
         self.measurement_time = None
         log.debug("Light engine characterization procedure initialized.")
+
+        self.measurement_successful = False
 
     def startup(self):
         """Measurement startup procedure.
@@ -306,6 +316,9 @@ class MolexLECharacterization(Procedure):
                 log.info("User aborted the procedure.")
                 break
 
+        if not self.should_stop():
+            self.measurement_successful = True
+
     def shutdown(self):
         """Execute the shutdown procedure.
 
@@ -337,6 +350,17 @@ class MolexLECharacterization(Procedure):
         # Parent shutdown procedure
         super().shutdown()
         log.info("Shutdown procedure complete.")
+
+        myTeamsMessage = pymsteams.connectorcard(teams_address)
+        if self.measurement_successful:
+            myTeamsMessage.text(
+                f"Measurement for light engine {self.light_engine_id}, channel {self.channel} started at {self.measurement_time}, {self.measurement_date} completed successfully."
+            )
+        else:
+            myTeamsMessage.text(
+                f"Measurement for light engine {self.light_engine_id}, channel {self.channel} started at {self.measurement_time}, {self.measurement_date} failed."
+            )
+        myTeamsMessage.send()
 
     def autodetect_instruments(self):
         """Detect all available instruments and their corresponding ports.
@@ -385,8 +409,9 @@ class MolexLECharacterization(Procedure):
 
     def wait_for_tec(self, target_temp, t_settle, t_sleep=0.5, n=600, tol=0.1):
         """Wait for the TEC to reach the target temperature, then let it settle for the specified amount of time.
-        
-        Raises RuntimeError if the target temp is not reached in the specified time period (default 5min)."""
+
+        Raises RuntimeError if the target temp is not reached in the specified time period (default 5min).
+        """
         success = False
         for _ in range(n):
             tec_temp = self.tec.get_temperature()
@@ -396,13 +421,12 @@ class MolexLECharacterization(Procedure):
             elif self.should_stop():
                 break
             time.sleep(t_sleep)
-            
+
         if success:
             log.info(f"Target temperature reached, settling for {t_settle}s")
             time.sleep(t_sleep)
         else:
             raise RuntimeError("Could not reach target TEC temperature.")
-            
 
     def read_voltage(self):
         """Quickfix function to implement the SMU read voltage procedure."""
@@ -417,4 +441,3 @@ class MolexLECharacterization(Procedure):
         voltage_v = self.smu.ask(f":READ?").replace("\n", "")
         self.smu.write(f":OUTP OFF")
         return voltage_v
-
