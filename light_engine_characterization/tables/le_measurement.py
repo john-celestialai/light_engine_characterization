@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import numpy as np
+import sqlalchemy as sa
 from sqlalchemy import ARRAY, Date, Float, Integer, Time
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -25,6 +26,7 @@ class LightEngineMeasurement(Base):
     bias_current_ma: Mapped[float]
     voltage_v: Mapped[float]
     tec_pid: Mapped[list | None] = mapped_column(ARRAY(Float), nullable=True)
+    nominal_temp_c: Mapped[float]
     tec_temp_c: Mapped[float]
     ambient_temp_c: Mapped[float]
     light_engine_temp_c: Mapped[float]
@@ -40,5 +42,6 @@ class LightEngineMeasurement(Base):
     linewidth_20db_nm: Mapped[float | None]
 
 
-if __name__ == "__main__":
-    print(LightEngineMeasurement.__table__.columns.keys())
+# if __name__ == "__main__":
+#     engine = sa.create_engine(database_address)
+#     LightEngineMeasurement.__table__.drop(engine)

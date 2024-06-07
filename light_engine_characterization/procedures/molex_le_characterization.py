@@ -234,7 +234,7 @@ class MolexLECharacterization(Procedure):
                 # Read the temperatures, voltages, and currents
                 tec_temp_c = self.tec.get_temperature()
                 # cathode_voltage_v = self.read_voltage()
-                cathode_voltage_v = self.zeus.get_voltage_readout(self.channel)
+                cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
                 ambient_temp_c, light_engine_temp_c = (
                     self.zeus.get_light_engine_temperatures()
                 )
@@ -282,6 +282,7 @@ class MolexLECharacterization(Procedure):
                     "Bias Current (mA)": bias_current,
                     "Voltage (V)": cathode_voltage_v,
                     "tec_pid": self.tec_pid,
+                    "nominal_temp_c": temperature,
                     "tec_temp_c": tec_temp_c,
                     "ambient_temp_c": ambient_temp_c,
                     "light_engine_temp_c": light_engine_temp_c,
