@@ -155,16 +155,17 @@ if __name__ == "__main__":
     zeus.write_read("fan.set_le_duty_cycle(90)")
     time.sleep(0.1)
     for j in range(8):
-        print(f"Channel {j}")
-        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},)")
-        time.sleep(0.1)
-        voltages = [zeus.get_voltage_readout(i) for i in range(8)]
-        print(voltages)
-        time.sleep(0.1)
-        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
-        time.sleep(0.1)
-        voltages = [zeus.get_voltage_readout(i) for i in range(8)]
-        print(voltages)
-        time.sleep(0.1)
+        
+        # print(f"Channel {j}")
         zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+        # time.sleep(0.1)
+        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+        # print(voltages)
+        # time.sleep(0.1)
+        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
+        # time.sleep(0.1)
+        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+        # print(voltages)
+        # time.sleep(0.1)
+        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
     zeus.close()

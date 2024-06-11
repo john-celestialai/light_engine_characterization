@@ -24,6 +24,7 @@ class MainWindow(ManagedWindow):
             inputs=[
                 "light_engine_id",
                 "channel",
+                "full_power_enable",
                 "temp_start",
                 "temp_stop",
                 "temp_step",
