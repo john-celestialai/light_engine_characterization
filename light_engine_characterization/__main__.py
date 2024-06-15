@@ -24,6 +24,7 @@ class MainWindow(ManagedWindow):
             inputs=[
                 "light_engine_id",
                 "channel",
+                "full_power_enable",
                 "temp_start",
                 "temp_stop",
                 "temp_step",
@@ -94,9 +95,13 @@ class MainWindow(ManagedWindow):
                     procedure.measurement_time,
                 ]
                 filename_attrs = [str(attr) for attr in filename_attrs]
-                filename = Path(self.file_input.directory.replace("\n", "")) / Path(
-                    "_".join(filename_attrs)
-                ).with_suffix("." + self.file_input.filename_extension)
+                filename = (
+                    Path(self.file_input.directory.replace("\n", ""))
+                    / Path(procedure.light_engine_id)
+                    / Path("_".join(filename_attrs)).with_suffix(
+                        "." + self.file_input.filename_extension
+                    )
+                )
                 filename = filename.expanduser()
 
                 # Create the parent directory if it doesn't exist

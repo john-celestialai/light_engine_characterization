@@ -106,14 +106,14 @@ class ZeusController:
 
     def get_voltage_readout(self, channel):
         adc_lut = [
-            "A_LDO_WCCMN",
-            "A_LDO_SCCMN",
-            "A_LDO_ECCMN",
             "A_LDO_NCCMN",
-            "SW_PIC_APROBE_2",
-            "SW_PIC_APROBE_1",
-            "NE_PIC_APROBE_2",
+            "A_LDO_ECCMN",
+            "A_LDO_SCCMN",
+            "A_LDO_WCCMN",
             "NE_PIC_APROBE_1",
+            "NE_PIC_APROBE_2",
+            "SW_PIC_APROBE_1",
+            "SW_PIC_APROBE_2",
         ]
         query = f"adc.{adc_lut[channel]}.print()"
         self.write_read(query)
@@ -129,10 +129,43 @@ class ZeusController:
 
 
 if __name__ == "__main__":
+    import sys
+    
+    # HOSTNAME = "pynq4"  # example 'pynq4'
+    # USERNAME = "xilinx"
+    # PASSWORD = "xilinx"
+    # sudo_prompt = ".*\#\s+"
+    # PROMPT = ".*\$\s+"
+    
+    # client = paramiko.SSHClient()
+
+    # # Set SSH key parameters to auto accept unknown hosts
+    # client.load_system_host_keys()
+    # client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    # client.connect(hostname=HOSTNAME, username=USERNAME, password=PASSWORD)
+    # interact = SSHClientInteraction(client, timeout=6, display=False)
+    # interact.send(f"sudo -i")
+    
+    # client.close()
+    # sys.exit()
+    
     zeus = ZeusController()
     zeus.open_session("pynq1")
     zeus.write_read("fan.set_le_duty_cycle(90)")
-    query_string = f"light_engine.set_laser_ma(LEChannel.LE0,0)"
-    zeus.write_read(query_string)
+    time.sleep(0.1)
+    for j in range(8):
+        
+        # print(f"Channel {j}")
+        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+        # time.sleep(0.1)
+        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+        # print(voltages)
+        # time.sleep(0.1)
+        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
+        # time.sleep(0.1)
+        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+        # print(voltages)
+        # time.sleep(0.1)
+        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
     zeus.close()
-

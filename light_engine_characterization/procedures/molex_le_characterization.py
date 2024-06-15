@@ -99,6 +99,9 @@ class MolexLECharacterization(Procedure):
     coarse_step = FloatParameter(
         "Coarse Bias Current Step", group_by="coarse_enable", units="mA", default=20
     )
+    
+    # Full power sweep enable
+    full_power_enable = BooleanParameter("Full Power Sweep", default=False)
 
     # OSA configuration settings
     wavelength_start = 1565
@@ -209,6 +212,14 @@ class MolexLECharacterization(Procedure):
 
     def execute(self):
         """Execute the light engine characterization procedure."""
+        # If full power sweep is enabled, set all channels except the target measurement channel to maximum bias
+        if self.full_power_enable:
+            for i in range(8):
+                if i != self.channel:
+                    full_power_bias = 500
+                    query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},{full_power_bias})"
+                    log.info(f"Set channel {i} to {full_power_bias}mA")
+                    self.zeus.write_read(query_string)
 
         for i, temperature in enumerate(self.temperature_steps):
             log.info(f"Starting bias sweep at {temperature}degC")
@@ -234,7 +245,7 @@ class MolexLECharacterization(Procedure):
                 # Read the temperatures, voltages, and currents
                 tec_temp_c = self.tec.get_temperature()
                 # cathode_voltage_v = self.read_voltage()
-                cathode_voltage_v = self.zeus.get_voltage_readout(self.channel)
+                cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
                 ambient_temp_c, light_engine_temp_c = (
                     self.zeus.get_light_engine_temperatures()
                 )
@@ -282,6 +293,7 @@ class MolexLECharacterization(Procedure):
                     "Bias Current (mA)": bias_current,
                     "Voltage (V)": cathode_voltage_v,
                     "tec_pid": self.tec_pid,
+                    "nominal_temp_c": temperature,
                     "tec_temp_c": tec_temp_c,
                     "ambient_temp_c": ambient_temp_c,
                     "light_engine_temp_c": light_engine_temp_c,
@@ -326,9 +338,10 @@ class MolexLECharacterization(Procedure):
         """
         # Disable light engine
         if self.zeus:
-            query_string = f"light_engine.set_laser_ma(LEChannel.LE{self.channel},0)"
+            for i in range(8):
+                query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},0)"
+                self.zeus.write_read(query_string)
             self.zeus.write_read("fan.set_le_duty_cycle(90)")
-            self.zeus.write_read(query_string)
             self.zeus.close()
 
         # Disable TEC
@@ -368,6 +381,7 @@ class MolexLECharacterization(Procedure):
         Iterates over all connected VISA instruments and queries their instrument ID.
         Returns a dictionary containing the instrument ID and port number.
         Raises an error if not all required instruments are detected."""
+        pass
 
     @property
     def temperature_steps(self) -> np.ndarray:
@@ -413,13 +427,18 @@ class MolexLECharacterization(Procedure):
         Raises RuntimeError if the target temp is not reached in the specified time period (default 5min).
         """
         success = False
+        count = 0
         for _ in range(n):
             tec_temp = self.tec.get_temperature()
-            if tec_temp > target_temp - tol:
+            if tec_temp > target_temp - tol and tec_temp < target_temp+tol:
                 success = True
-                break
+                count += 1
+                if count >= 10:
+                    break
             elif self.should_stop():
                 break
+            else:
+                count = 0
             time.sleep(t_sleep)
 
         if success:
