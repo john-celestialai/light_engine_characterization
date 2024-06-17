@@ -2,10 +2,39 @@ from datetime import datetime
 
 import numpy as np
 import sqlalchemy as sa
+from psycopg2.extensions import AsIs, register_adapter
 from sqlalchemy import ARRAY, Date, Float, Integer, Time
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 database_address = "postgresql://testwrite:Happy_photons@10.10.30.10:5432/john_dev"
+
+
+# We have to tell psycopg2 how to handle numpy datatypes
+def addapt_numpy_float64(numpy_float64):
+    return AsIs(numpy_float64)
+
+
+def addapt_numpy_int64(numpy_int64):
+    return AsIs(numpy_int64)
+
+
+def addapt_numpy_float32(numpy_float32):
+    return AsIs(numpy_float32)
+
+
+def addapt_numpy_int32(numpy_int32):
+    return AsIs(numpy_int32)
+
+
+def addapt_numpy_array(numpy_array):
+    return AsIs(numpy_array.tolist())
+
+
+register_adapter(np.float64, addapt_numpy_float64)
+register_adapter(np.int64, addapt_numpy_int64)
+register_adapter(np.float32, addapt_numpy_float32)
+register_adapter(np.int32, addapt_numpy_int32)
+register_adapter(np.ndarray, addapt_numpy_array)
 
 
 class Base(DeclarativeBase):
@@ -40,6 +69,7 @@ class LightEngineMeasurement(Base):
     smsr_linewidth_nm: Mapped[float | None]
     linewidth_3db_nm: Mapped[float | None]
     linewidth_20db_nm: Mapped[float | None]
+    sweep_type: Mapped[str | None]
 
 
 # if __name__ == "__main__":
