@@ -52,6 +52,7 @@ def detect_instruments():
         try:
             res = rm.open_resource(resource)
             res.write_termination = "\n"
+            res.baud_rate = 38400
             resource_id = res.query("*IDN?")
             if "anritsu" in resource_id.lower():
                 instruments["anritsu"] = resource
@@ -99,7 +100,7 @@ class MolexLECharacterization(Procedure):
     coarse_step = FloatParameter(
         "Coarse Bias Current Step", group_by="coarse_enable", units="mA", default=20
     )
-    
+
     # Full power sweep enable
     full_power_enable = BooleanParameter("Full Power Sweep", default=False)
 
@@ -217,9 +218,15 @@ class MolexLECharacterization(Procedure):
             for i in range(8):
                 if i != self.channel:
                     full_power_bias = 500
-                    query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},{full_power_bias})"
+                    query_string = (
+                        f"light_engine.set_laser_ma(LEChannel.LE{i},{full_power_bias})"
+                    )
                     log.info(f"Set channel {i} to {full_power_bias}mA")
                     self.zeus.write_read(query_string)
+        else:
+            for i in range(8):
+                query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},0)"
+                log.info(f"Set channel {i} to 0mA")
 
         for i, temperature in enumerate(self.temperature_steps):
             log.info(f"Starting bias sweep at {temperature}degC")
@@ -339,6 +346,7 @@ class MolexLECharacterization(Procedure):
         # Disable light engine
         if self.zeus:
             for i in range(8):
+                log.info(f"Disabling light engine channel {i}")
                 query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},0)"
                 self.zeus.write_read(query_string)
             self.zeus.write_read("fan.set_le_duty_cycle(90)")
@@ -430,7 +438,7 @@ class MolexLECharacterization(Procedure):
         count = 0
         for _ in range(n):
             tec_temp = self.tec.get_temperature()
-            if tec_temp > target_temp - tol and tec_temp < target_temp+tol:
+            if tec_temp > target_temp - tol and tec_temp < target_temp + tol:
                 success = True
                 count += 1
                 if count >= 10:
@@ -460,3 +468,25 @@ class MolexLECharacterization(Procedure):
         voltage_v = self.smu.ask(f":READ?").replace("\n", "")
         self.smu.write(f":OUTP OFF")
         return voltage_v
+
+
+if __name__ == "__main__":
+    rm = visa.ResourceManager()
+    resources = rm.list_resources()
+    instruments = {}
+    for resource in resources:
+        try:
+            res = rm.open_resource(resource)
+            print(res)
+            res.write_termination = "\n"
+            res.baud_rate = 38400
+            resource_id = res.query("*IDN?")
+            print(resource_id)
+            if "anritsu" in resource_id.lower():
+                instruments["anritsu"] = resource
+            elif "arroyo" in resource_id.lower():
+                instruments["arroyo"] = resource
+            elif "keithley" in resource_id.lower():
+                instruments["keithley"] = resource
+        except Exception as e:
+            continue

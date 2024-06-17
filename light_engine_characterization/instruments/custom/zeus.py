@@ -130,13 +130,13 @@ class ZeusController:
 
 if __name__ == "__main__":
     import sys
-    
+
     # HOSTNAME = "pynq4"  # example 'pynq4'
     # USERNAME = "xilinx"
     # PASSWORD = "xilinx"
     # sudo_prompt = ".*\#\s+"
     # PROMPT = ".*\$\s+"
-    
+
     # client = paramiko.SSHClient()
 
     # # Set SSH key parameters to auto accept unknown hosts
@@ -146,26 +146,26 @@ if __name__ == "__main__":
     # client.connect(hostname=HOSTNAME, username=USERNAME, password=PASSWORD)
     # interact = SSHClientInteraction(client, timeout=6, display=False)
     # interact.send(f"sudo -i")
-    
+
     # client.close()
     # sys.exit()
-    
+
     zeus = ZeusController()
     zeus.open_session("pynq1")
     zeus.write_read("fan.set_le_duty_cycle(90)")
     time.sleep(0.1)
-    for j in range(8):
-        
-        # print(f"Channel {j}")
-        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
-        # time.sleep(0.1)
-        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
-        # print(voltages)
-        # time.sleep(0.1)
-        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
-        # time.sleep(0.1)
-        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
-        # print(voltages)
-        # time.sleep(0.1)
-        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+    # for j in range(8):
+
+    #     # print(f"Channel {j}")
+    #     zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+    # time.sleep(0.1)
+    # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+    # print(voltages)
+    # time.sleep(0.1)
+    # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
+    # time.sleep(0.1)
+    # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+    # print(voltages)
+    # time.sleep(0.1)
+    # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
     zeus.close()
