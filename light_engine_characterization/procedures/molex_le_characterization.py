@@ -314,6 +314,7 @@ class MolexLECharacterization(Procedure):
                     "smsr_linewidth_nm": smsr_linewidth_nm,
                     "linewidth_3db_nm": linewidth_3db_nm,
                     "linewidth_20db_nm": linewidth_20db_nm,
+                    "sweep_type": "full_power" if self.full_power_enable else "normal",
                 }
                 k = i * self.n_bias_steps + j
                 self.emit("results", le_measurement)
