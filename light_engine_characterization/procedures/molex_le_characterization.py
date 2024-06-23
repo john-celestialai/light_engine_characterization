@@ -167,6 +167,13 @@ class MolexLECharacterization(Procedure):
         self.tec_pid = self.tec.pid_params
         log.debug("Connected to TEC.")
 
+        if self.channel in (3, 7):
+            self.wavelength_start = 1570
+            self.wavelength_stop = 1590
+        else:
+            self.wavelength_start = 1565
+            self.wavelength_stop = 1585
+
         # Configure the OSA parameters
         self.osa = AnritsuMS9740B(instruments["anritsu"])
         self.osa.wavelength_start = self.wavelength_start
