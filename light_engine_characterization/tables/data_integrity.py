@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 
 import pandas as pd
 import sqlalchemy as sa
@@ -27,15 +28,58 @@ with Session(engine) as session:
                     .where(LightEngineMeasurement.light_engine_id == le_id)
                     .where(LightEngineMeasurement.channel == i)
                     .where(LightEngineMeasurement.nominal_temp_c == temp)
+                    .where(LightEngineMeasurement.sweep_type == "normal")
                 )
 
-                if n_points < 501:
+                # If channel=0 and n_points=1002, then it is most likely
+                # that the first sweep is a normal sweep and the second
+                # sweep is a full power sweep
+                if i == 0 and n_points == 1002:
+                    query = (
+                        sa.select(LightEngineMeasurement)
+                        .where(LightEngineMeasurement.light_engine_id == le_id)
+                        .where(LightEngineMeasurement.channel == i)
+                        .where(LightEngineMeasurement.nominal_temp_c == temp)
+                    )
+                    df = pd.read_sql(query, session.bind)
+                    df_groups = df.groupby(["date", "time"])
+
+                    # If we have two groups and each group has 501 datapoints,
+                    # then the first group is the normal sweep and the second
+                    # group is the full_power sweep
+                    if len(df_groups) == 2 and all(
+                        [d.shape[0] == 501 for _, d in df_groups]
+                    ):
+                        print("Found probable normal and full_power sweeps.")
+                        key_0, key_1 = list(df_groups.groups.keys())
+                        key_0_dt = datetime.combine(key_0[0], key_0[1])
+                        key_1_dt = datetime.combine(key_1[0], key_1[1])
+                        if key_0_dt < key_1_dt:
+                            # Key 1 belongs to the later entry
+                            meas_ids = df_groups.get_group(key_1)[
+                                "measurement_id"
+                            ].values
+                        else:
+                            # Key 0 belongs to the later entry
+                            meas_ids = df_groups.get_group(key_0)[
+                                "measurement_id"
+                            ].values
+
+                        updates = [
+                            {"measurement_id": meas_id, "sweep_type": "full_power"}
+                            for meas_id in meas_ids
+                        ]
+                        session.execute(sa.update(LightEngineMeasurement), updates)
+                        session.commit()
+
+                elif n_points < 501:
                     print(
                         f"Insufficient datapoints for light_engine_id={le_id}, channel={i}, temp={temp} (expected {501}, found {n_points})"
                     )
                     # For now, we can just skip doing anything about
                     # insufficient number of points since these are most likely
                     # due to a measurement not being complete
+
                 elif n_points > 501:
                     print(
                         f"Excess datapoints for light_engine_id={le_id}, channel={i}, temp={temp} (expected {501}, found {n_points})"
@@ -50,9 +94,9 @@ with Session(engine) as session:
                     )
                     df = pd.read_sql(query, session.bind)
 
-                    # First try to separate the measurements by day
+                    # First try to separate the measurements by day/time and
+                    # delete any incomplete sweeps
                     for name, sub_df in df.groupby(["date", "time"]):
-
                         # Delete any incomplete sweeps
                         if sub_df.shape[0] < 501:
                             print(f"Incomplete sweep found for sub-table {name}")
@@ -75,3 +119,6 @@ with Session(engine) as session:
                                 print("Completed.")
                             else:
                                 print("Skipping delete.")
+                        else:
+                            print(name)
+                            print(sub_df)
