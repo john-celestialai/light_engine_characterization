@@ -259,6 +259,9 @@ class MolexLECharacterization(Procedure):
             log.info("User aborted the procedure.")
             return None
 
+        # Select the channel
+        self.switch.set_channel(self.channel)
+
         # Perform the bias sweep
         for j, bias_current in enumerate(self.bias_current_steps):
             start_date = self.measurement_date
@@ -502,7 +505,7 @@ class MolexLECharacterization(Procedure):
 
         if success:
             log.info(f"Target temperature reached, settling for {t_settle}s")
-            time.sleep(t_sleep)
+            time.sleep(t_settle)
         else:
             raise RuntimeError("Could not reach target TEC temperature.")
 
