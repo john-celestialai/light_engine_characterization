@@ -31,19 +31,23 @@ class OpticalSwitch:
 
     def configure(self) -> None:
         """Configuration for Labjack and optical switch."""
-        # Set DIO3 high to prevent switch reset
-        ljm.eWriteName(self.handle, "DIO3", 1)
+        # Set DAC0 high to prevent switch reset
+        ljm.eWriteName(self.handle, "DAC0", 3.3)
 
     def reset(self) -> None:
         """Reset the labjack and the optical switch."""
         # Reboot the labjack
-        ljm.eWriteAddress(self.handle, 61998, ljm.constants.UINT32, 0x4C4A0000)
-        time.sleep(0.5)
+        # ljm.eWriteAddress(self.handle, 61998, ljm.constants.UINT32, 0x4C4A0000)
+        # time.sleep(0.5)
 
-        # Pull DIO3 low for >4ms to reset optical switch
-        ljm.eWriteName(self.handle, "DIO3", 0)
-        time.sleep(0.01)
-        ljm.eWriteName(self.handle, "DIO3", 1)
+        # Pull DAC0 low for >4ms to reset optical switch
+        ljm.eWriteName(self.handle, "DAC0", 0.0)
+        time.sleep(0.1)
+        ljm.eWriteName(self.handle, "DAC0", 3.3)
+
+        # Wait for the done pin to go to 0V
+        while self.done_voltage > 0.2:
+            time.sleep(0.25)
 
     def get_channel(self) -> int:
         """Get the current switch input channel.
@@ -56,7 +60,7 @@ class OpticalSwitch:
         states = ljm.eReadNames(self.handle, len(names), names)
         return sum([int(j * 2**i) for i, j in enumerate(states)])
 
-    def set_channel(self, channel, check) -> None:
+    def set_channel(self, channel, check=True) -> None:
         """Select the switch input channel.
 
         The switch channel is selected by setting bits D[0:2] on the switch
@@ -70,11 +74,18 @@ class OpticalSwitch:
         states = [int(i) for i in reversed(list(f"{channel:03b}"))]
         ljm.eWriteNames(self.handle, len(names), names, states)
 
+        # Toggle the strobe pin to activate the switch
+        ljm.eWriteName(self.handle, "DIO3", 1)
+        time.sleep(1)
+        ljm.eWriteName(self.handle, "DIO3", 0)
+
         if check:
-            done = False
-            while not done:
-                done = ljm.eReadName(self.handle, "DIO4")
-                time.sleep(0.25)
+            while self.done_voltage > 0.2:
+                time.sleep(0.1)
+
+    @property
+    def done_voltage(self):
+        return ljm.eReadName(self.handle, "AIN0")
 
 
 if __name__ == "__main__":
@@ -82,10 +93,13 @@ if __name__ == "__main__":
     switch = OpticalSwitch()
     switch.open()
     switch.reset()
+    switch.configure()
     print(switch.get_channel())
+    time.sleep(1)
     for i in range(8):
         print(f"Switching channel to {i}")
         switch.set_channel(i)
+
         print()
         print("Reading current channel")
         print(switch.get_channel())

@@ -25,6 +25,7 @@ from light_engine_characterization.tables import (
     LightEngineMeasurement,
     database_address,
 )
+from light_engine_characterization.instruments.agiltron import OpticalSwitch
 
 teams_address = (
     "https://celestialai.webhook.office.com/webhookb2/"
@@ -186,6 +187,8 @@ class MolexLECharacterization(Procedure):
         # Connect to SMU
         # self.smu = Keithley2400(instruments["keithley"])
         # log.debug("Connected to SMU.")
+
+        # Connect to optical switch
 
         # Connect to Zeus controller
         self.zeus = ZeusController()
@@ -498,3 +501,34 @@ if __name__ == "__main__":
                 instruments["keithley"] = resource
         except Exception as e:
             continue
+
+    print(instruments)
+
+    # Testing optical switch. Iterate through each channel and toggle the power on
+    # and off to verify transmssion
+    osa = AnritsuMS9740B(instruments["anritsu"])
+    zeus = ZeusController()
+    switch = OpticalSwitch()
+    switch.open()
+    switch.reset()
+    switch.configure()
+    zeus.open_session("pynq1")
+
+    for j in range(8):
+        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+
+    time.sleep(3)
+    for j in range(8):
+        print(f"Channel {j}")
+        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},400)")
+        switch.set_channel(j)
+        time.sleep(0.5)
+        print("reading done voltage")
+        osa.single_sweep()
+        time.sleep(0.5)
+        readback = osa.measure_peak()
+        print(readback)
+        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+        print()
+
+    switch.close()
