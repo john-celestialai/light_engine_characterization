@@ -25,10 +25,11 @@ class MainWindow(ManagedWindow):
                 "light_engine_id",
                 "channel",
                 "full_power_enable",
-                "temp_start",
-                "temp_stop",
-                "temp_step",
-                "temp_settling_time",
+                "temperature",
+                # "temp_start",
+                # "temp_stop",
+                # "temp_step",
+                # "temp_settling_time",
                 "bias_start",
                 "bias_stop",
                 "bias_step",
@@ -53,6 +54,8 @@ class MainWindow(ManagedWindow):
             ],
             x_axis="Bias Current (mA)",
             y_axis="wavelength_peak_nm",
+            sequencer=True,
+            sequencer_inputs=["temperature", "channel"],
         )
         self.setWindowTitle("Molex Light Engine Characterization")
 

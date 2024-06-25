@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pymsteams
@@ -18,6 +18,7 @@ from pymeasure.instruments.keithley import Keithley2400
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
 
+from light_engine_characterization.instruments.agiltron import OpticalSwitch
 from light_engine_characterization.instruments.anritsu import AnritsuMS9740B
 from light_engine_characterization.instruments.arroyo import TECSource5240
 from light_engine_characterization.instruments.custom import ZeusController
@@ -25,7 +26,6 @@ from light_engine_characterization.tables import (
     LightEngineMeasurement,
     database_address,
 )
-from light_engine_characterization.instruments.agiltron import OpticalSwitch
 
 teams_address = (
     "https://celestialai.webhook.office.com/webhookb2/"
@@ -75,15 +75,18 @@ class MolexLECharacterization(Procedure):
     channel = IntegerParameter("Light Engine Channel", minimum=0, maximum=7, default=0)
 
     # Temperature sweep parameters
-    temp_start = FloatParameter(
-        "Temperature Start", units="°C", minimum=20, maximum=90, decimals=1, default=25
+    temperature = FloatParameter(
+        "Temperature", units="°C", minimum=20, maximum=90, decimals=1, default=25
     )
-    temp_stop = FloatParameter(
-        "Temperature Stop", units="°C", minimum=20, maximum=90, decimals=1, default=75
-    )
-    temp_step = FloatParameter(
-        "Temperature Step", units="°C", minimum=1, decimals=1, default=10
-    )
+    # temp_start = FloatParameter(
+    #     "Temperature Start", units="°C", minimum=20, maximum=90, decimals=1, default=25
+    # )
+    # temp_stop = FloatParameter(
+    #     "Temperature Stop", units="°C", minimum=20, maximum=90, decimals=1, default=75
+    # )
+    # temp_step = FloatParameter(
+    #     "Temperature Step", units="°C", minimum=1, decimals=1, default=10
+    # )
     temp_settling_time = IntegerParameter(
         "Temperature Settling Time", units="s", default=30
     )
@@ -142,6 +145,7 @@ class MolexLECharacterization(Procedure):
         self.tec = None
         self.osa = None
         self.smu = None
+        self.switch = None
         self.zeus = None
         self.engine = None
         self.session = None
@@ -189,6 +193,11 @@ class MolexLECharacterization(Procedure):
         # log.debug("Connected to SMU.")
 
         # Connect to optical switch
+        self.switch = OpticalSwitch()
+        self.switch.open()
+        self.switch.reset()
+        self.switch.configure()
+        log.debug("Connected to optical switch (labjack).")
 
         # Connect to Zeus controller
         self.zeus = ZeusController()
@@ -223,7 +232,9 @@ class MolexLECharacterization(Procedure):
 
     def execute(self):
         """Execute the light engine characterization procedure."""
-        # If full power sweep is enabled, set all channels except the target measurement channel to maximum bias
+        log.info(f"Starting bias sweep at {self.temperature}degC")
+        # If full power sweep is enabled, set all channels except the target
+        # measurement channel to maximum bias
         if self.full_power_enable:
             for i in range(8):
                 if i != self.channel:
@@ -238,109 +249,105 @@ class MolexLECharacterization(Procedure):
                 query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},0)"
                 log.info(f"Set channel {i} to 0mA")
 
-        for i, temperature in enumerate(self.temperature_steps):
-            log.info(f"Starting bias sweep at {temperature}degC")
-            self.tec.set_temperature(temperature)
-            self.tec.set_output_on()
-            # self.smu.enable_source = True
+        # Set the temperature and wait for it to settle
+        self.tec.set_temperature(self.temperature)
+        self.tec.set_output_on()
+        # self.smu.enable_source = True
+        log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
+        self.wait_for_tec(self.temperature, self.temp_settling_time)
+        if self.should_stop():
+            log.info("User aborted the procedure.")
+            return None
 
-            log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
-            self.wait_for_tec(temperature, self.temp_settling_time)
-            if self.should_stop():
-                log.info("User aborted the procedure.")
-                break
+        # Perform the bias sweep
+        for j, bias_current in enumerate(self.bias_current_steps):
+            start_date = self.measurement_date
+            start_time = self.measurement_time
 
-            for j, bias_current in enumerate(self.bias_current_steps):
-                start_date = self.measurement_date
-                start_time = self.measurement_time
+            # Set the light engine channel and bias current
+            log.debug(f"Setting bias current to {bias_current}mA")
+            query_string = (
+                f"light_engine.set_laser_ma(LEChannel.LE{self.channel},{bias_current})"
+            )
+            self.zeus.write_read(query_string)
 
-                # Set the light engine channel and bias current
-                log.debug(f"Setting bias current to {bias_current}mA")
-                query_string = f"light_engine.set_laser_ma(LEChannel.LE{self.channel},{bias_current})"
-                self.zeus.write_read(query_string)
+            # Read the temperatures, voltages, and currents
+            tec_temp_c = self.tec.get_temperature()
+            # cathode_voltage_v = self.read_voltage()
+            cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
+            ambient_temp_c, light_engine_temp_c = (
+                self.zeus.get_light_engine_temperatures()
+            )
+            mpd_current_ma = self.zeus.get_mpd_readout(self.channel)
 
-                # Read the temperatures, voltages, and currents
-                tec_temp_c = self.tec.get_temperature()
-                # cathode_voltage_v = self.read_voltage()
-                cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
-                ambient_temp_c, light_engine_temp_c = (
-                    self.zeus.get_light_engine_temperatures()
+            # Trigger a single OSA sweep and retrieve the result
+            sweep_successful = False
+            while not sweep_successful:
+                try:
+                    self.osa.single_sweep()
+                    sweep_successful = True
+                except RuntimeWarning:
+                    log.warning("Sweep timed out, re-running sweep")
+
+            wavelength_nm, power_dbm = self.osa.read_memory()
+            wavelength_nm = np.array(wavelength_nm)
+            power_dbm = np.array(power_dbm)
+            power_uw = 10 ** (power_dbm / 10) * 1000
+
+            # Get the spectral peak (wavelength, power)
+            osa_peak = self.osa.measure_peak()
+            peak_wavelength_nm = osa_peak[0]
+            peak_power_dbm = osa_peak[1]
+            log.debug(f"Peak wavelength: {peak_wavelength_nm}nm, {peak_power_dbm}dBm")
+
+            # If the peak power is greater than -30dBm, also measure the SMSR and linewidth
+            if peak_power_dbm > -30:
+                smsr_linewidth_nm, smsr_db = self.osa.measure_smsr()
+                linewidth_3db_nm = self.osa.measure_linewidth(3)
+                linewidth_20db_nm = self.osa.measure_linewidth(20)
+            else:
+                smsr_linewidth_nm, smsr_db = np.nan, np.nan
+                linewidth_3db_nm = np.nan
+                linewidth_20db_nm = np.nan
+
+            # Record the measurement
+            # self.bias_current_ma = bias_current
+            le_measurement = {
+                "light_engine_id": self.light_engine_id,
+                "channel": self.channel,
+                "date": start_date,
+                "time": start_time,
+                "Bias Current (mA)": bias_current,
+                "Voltage (V)": cathode_voltage_v,
+                "tec_pid": self.tec_pid,
+                "nominal_temp_c": self.temperature,
+                "tec_temp_c": tec_temp_c,
+                "ambient_temp_c": ambient_temp_c,
+                "light_engine_temp_c": light_engine_temp_c,
+                "mpd_current_ma": mpd_current_ma,
+                "wavelength_nm": wavelength_nm.tolist(),
+                "power_dbm": power_dbm.tolist(),
+                "power_uw": power_uw.tolist(),
+                "wavelength_peak_nm": peak_wavelength_nm,
+                "power_peak_dbm": peak_power_dbm,
+                "smsr_db": smsr_db,
+                "smsr_linewidth_nm": smsr_linewidth_nm,
+                "linewidth_3db_nm": linewidth_3db_nm,
+                "linewidth_20db_nm": linewidth_20db_nm,
+                "sweep_type": "full_power" if self.full_power_enable else "normal",
+            }
+            k = i * self.n_bias_steps + j
+            self.emit("results", le_measurement)
+            self.emit("progress", 100 * k / self.iterations)
+
+            if self.session:
+                le_measurement["bias_current_ma"] = le_measurement.pop(
+                    "Bias Current (mA)"
                 )
-                mpd_current_ma = self.zeus.get_mpd_readout(self.channel)
-
-                # Trigger a single OSA sweep and retrieve the result
-                sweep_successful = False
-                while not sweep_successful:
-                    try:
-                        self.osa.single_sweep()
-                        sweep_successful = True
-                    except RuntimeWarning:
-                        log.warning("Sweep timed out, re-running sweep")
-
-                wavelength_nm, power_dbm = self.osa.read_memory()
-                wavelength_nm = np.array(wavelength_nm)
-                power_dbm = np.array(power_dbm)
-                power_uw = 10 ** (power_dbm / 10) * 1000
-
-                # Get the spectral peak (wavelength, power)
-                osa_peak = self.osa.measure_peak()
-                peak_wavelength_nm = osa_peak[0]
-                peak_power_dbm = osa_peak[1]
-                log.debug(
-                    f"Peak wavelength: {peak_wavelength_nm}nm, {peak_power_dbm}dBm"
-                )
-
-                # If the peak power is greater than -30dBm, also measure the SMSR and linewidth
-                if peak_power_dbm > -30:
-                    smsr_linewidth_nm, smsr_db = self.osa.measure_smsr()
-                    linewidth_3db_nm = self.osa.measure_linewidth(3)
-                    linewidth_20db_nm = self.osa.measure_linewidth(20)
-                else:
-                    smsr_linewidth_nm, smsr_db = np.nan, np.nan
-                    linewidth_3db_nm = np.nan
-                    linewidth_20db_nm = np.nan
-
-                # Record the measurement
-                # self.bias_current_ma = bias_current
-                le_measurement = {
-                    "light_engine_id": self.light_engine_id,
-                    "channel": self.channel,
-                    "date": start_date,
-                    "time": start_time,
-                    "Bias Current (mA)": bias_current,
-                    "Voltage (V)": cathode_voltage_v,
-                    "tec_pid": self.tec_pid,
-                    "nominal_temp_c": temperature,
-                    "tec_temp_c": tec_temp_c,
-                    "ambient_temp_c": ambient_temp_c,
-                    "light_engine_temp_c": light_engine_temp_c,
-                    "mpd_current_ma": mpd_current_ma,
-                    "wavelength_nm": wavelength_nm.tolist(),
-                    "power_dbm": power_dbm.tolist(),
-                    "power_uw": power_uw.tolist(),
-                    "wavelength_peak_nm": peak_wavelength_nm,
-                    "power_peak_dbm": peak_power_dbm,
-                    "smsr_db": smsr_db,
-                    "smsr_linewidth_nm": smsr_linewidth_nm,
-                    "linewidth_3db_nm": linewidth_3db_nm,
-                    "linewidth_20db_nm": linewidth_20db_nm,
-                    "sweep_type": "full_power" if self.full_power_enable else "normal",
-                }
-                k = i * self.n_bias_steps + j
-                self.emit("results", le_measurement)
-                self.emit("progress", 100 * k / self.iterations)
-
-                if self.session:
-                    le_measurement["bias_current_ma"] = le_measurement.pop(
-                        "Bias Current (mA)"
-                    )
-                    le_measurement["voltage_v"] = le_measurement.pop("Voltage (V)")
-                    db_row = LightEngineMeasurement(**le_measurement)
-                    self.session.add(db_row)
-                    self.session.commit()
-
-                if self.should_stop():
-                    break
+                le_measurement["voltage_v"] = le_measurement.pop("Voltage (V)")
+                db_row = LightEngineMeasurement(**le_measurement)
+                self.session.add(db_row)
+                self.session.commit()
 
             if self.should_stop():
                 log.info("User aborted the procedure.")
@@ -369,6 +376,11 @@ class MolexLECharacterization(Procedure):
             self.tec.set_output_off()
             # self.tec.close()
 
+        # Disconnect from optical switch (labjack)
+        if self.switch:
+            self.switch.reset()
+            self.switch.close()
+
         # Disconnect from OSA and SMU
         # if self.osa:
         #     self.osa.close()
@@ -386,11 +398,19 @@ class MolexLECharacterization(Procedure):
         myTeamsMessage = pymsteams.connectorcard(teams_address)
         if self.measurement_successful:
             myTeamsMessage.text(
-                f"Measurement for light engine {self.light_engine_id}, channel {self.channel} started at {self.measurement_time}, {self.measurement_date} completed successfully."
+                (
+                    f"Measurement for light engine {self.light_engine_id}, "
+                    f"channel {self.channel} started at {self.measurement_time}, "
+                    f"{self.measurement_date} completed successfully."
+                )
             )
         else:
             myTeamsMessage.text(
-                f"Measurement for light engine {self.light_engine_id}, channel {self.channel} started at {self.measurement_time}, {self.measurement_date} failed."
+                (
+                    f"Measurement for light engine {self.light_engine_id}, "
+                    f"channel {self.channel} started at {self.measurement_time}, "
+                    f"{self.measurement_date} failed."
+                )
             )
         myTeamsMessage.send()
 
@@ -438,7 +458,27 @@ class MolexLECharacterization(Procedure):
 
     @property
     def iterations(self) -> int:
-        return self.n_temp_steps * self.n_bias_steps
+        # return self.n_temp_steps * self.n_bias_steps
+        return self.n_bias_steps
+
+    def get_estimates(self, sequence_length=None, sequence=None):
+
+        # Approximate time to measure a single sweep point (seconds)
+        step_time = 2.6
+
+        duration = self.iterations * step_time * sequence_length
+
+        estimates = [
+            ("Duration", "%d s" % int(duration)),
+            ("Number of lines", "%d" % int(self.iterations)),
+            ("Sequence length", str(sequence_length)),
+            (
+                "Measurement finished at",
+                str(datetime.now() + timedelta(seconds=duration)),
+            ),
+        ]
+
+        return estimates
 
     def wait_for_tec(self, target_temp, t_settle, t_sleep=0.5, n=600, tol=0.1):
         """Wait for the TEC to reach the target temperature, then let it settle for the specified amount of time.

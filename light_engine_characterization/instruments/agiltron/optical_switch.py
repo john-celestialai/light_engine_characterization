@@ -1,4 +1,4 @@
-"""Drive for Agiltron MSWH 1xN Single mode optical switch series.
+"""Driver for Agiltron MSWH 1xN Single mode optical switch series.
 
 Control for the optical switch is implemented through the Labjack T7 digital I/O.
 """
