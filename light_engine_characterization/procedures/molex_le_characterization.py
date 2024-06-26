@@ -72,10 +72,10 @@ class MolexLECharacterization(Procedure):
 
     # Measurement unique identifiers
     light_engine_id = Parameter("Light Engine ID")
-    channel = IntegerParameter("Light Engine Channel", minimum=0, maximum=7, default=0)
+    channel = IntegerParameter("Channel", minimum=0, maximum=7, default=0)
 
     # Temperature sweep parameters
-    temperature = FloatParameter(
+    nominal_temp_c = FloatParameter(
         "Temperature", units="°C", minimum=20, maximum=90, decimals=1, default=25
     )
     # temp_start = FloatParameter(
@@ -232,7 +232,7 @@ class MolexLECharacterization(Procedure):
 
     def execute(self):
         """Execute the light engine characterization procedure."""
-        log.info(f"Starting bias sweep at {self.temperature}degC")
+        log.info(f"Starting bias sweep at {self.nominal_temp_c}degC")
         # If full power sweep is enabled, set all channels except the target
         # measurement channel to maximum bias
         if self.full_power_enable:
@@ -250,11 +250,11 @@ class MolexLECharacterization(Procedure):
                 log.info(f"Set channel {i} to 0mA")
 
         # Set the temperature and wait for it to settle
-        self.tec.set_temperature(self.temperature)
+        self.tec.set_temperature(self.nominal_temp_c)
         self.tec.set_output_on()
         # self.smu.enable_source = True
         log.debug(f"Waiting {self.temp_settling_time}s for TEC to settle.")
-        self.wait_for_tec(self.temperature, self.temp_settling_time)
+        self.wait_for_tec(self.nominal_temp_c, self.temp_settling_time)
         if self.should_stop():
             log.info("User aborted the procedure.")
             return None
@@ -323,7 +323,7 @@ class MolexLECharacterization(Procedure):
                 "Bias Current (mA)": bias_current,
                 "Voltage (V)": cathode_voltage_v,
                 "tec_pid": self.tec_pid,
-                "nominal_temp_c": self.temperature,
+                "nominal_temp_c": self.nominal_temp_c,
                 "tec_temp_c": tec_temp_c,
                 "ambient_temp_c": ambient_temp_c,
                 "light_engine_temp_c": light_engine_temp_c,
@@ -339,9 +339,9 @@ class MolexLECharacterization(Procedure):
                 "linewidth_20db_nm": linewidth_20db_nm,
                 "sweep_type": "full_power" if self.full_power_enable else "normal",
             }
-            k = i * self.n_bias_steps + j
+            # k = i * self.n_bias_steps + j
             self.emit("results", le_measurement)
-            self.emit("progress", 100 * k / self.iterations)
+            self.emit("progress", 100 * j / self.iterations)
 
             if self.session:
                 le_measurement["bias_current_ma"] = le_measurement.pop(
