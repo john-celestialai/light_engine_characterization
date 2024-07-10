@@ -29,7 +29,7 @@ class MainWindow(ManagedWindow):
                 # "temp_start",
                 # "temp_stop",
                 # "temp_step",
-                # "temp_settling_time",
+                "temp_settling_time",
                 "bias_start",
                 "bias_stop",
                 "bias_step",

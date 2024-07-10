@@ -27,6 +27,9 @@ from light_engine_characterization.tables import (
     database_address,
 )
 
+# Power corrections to account for switch/connector losses
+power_corr = (1.06987, 1.21548, 1.45471, 1.38559, 2.34974, 1.4391, 1.22897, 1.64761)
+
 teams_address = (
     "https://celestialai.webhook.office.com/webhookb2/"
     "8cb3d0ed-2d5f-4852-b21f-451dc3552a65@1f01dda0-08ff-4642-9764-7ebe444cecb7/"
@@ -247,7 +250,7 @@ class MolexLECharacterization(Procedure):
         else:
             for i in range(8):
                 query_string = f"light_engine.set_laser_ma(LEChannel.LE{i},0)"
-                log.info(f"Set channel {i} to 0mA")
+                log.debug(f"Set channel {i} to 0mA")
 
         # Set the temperature and wait for it to settle
         self.tec.set_temperature(self.nominal_temp_c)
@@ -294,13 +297,13 @@ class MolexLECharacterization(Procedure):
 
             wavelength_nm, power_dbm = self.osa.read_memory()
             wavelength_nm = np.array(wavelength_nm)
-            power_dbm = np.array(power_dbm)
+            power_dbm = np.array(power_dbm) + power_corr[self.channel]
             power_uw = 10 ** (power_dbm / 10) * 1000
 
             # Get the spectral peak (wavelength, power)
             osa_peak = self.osa.measure_peak()
             peak_wavelength_nm = osa_peak[0]
-            peak_power_dbm = osa_peak[1]
+            peak_power_dbm = osa_peak[1] + power_corr[self.channel]
             log.debug(f"Peak wavelength: {peak_wavelength_nm}nm, {peak_power_dbm}dBm")
 
             # If the peak power is greater than -30dBm, also measure the SMSR and linewidth
