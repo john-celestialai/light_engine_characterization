@@ -100,6 +100,7 @@ with Session(engine) as session:
                         # Delete any incomplete sweeps
                         if sub_df.shape[0] < 501:
                             print(f"Incomplete sweep found for sub-table {name}")
+                            sub_df.sort_values(by="measurement_id", inplace=True)
                             print(sub_df)
                             resp = input(
                                 (
@@ -120,5 +121,6 @@ with Session(engine) as session:
                             else:
                                 print("Skipping delete.")
                         else:
+                            sub_df.sort_values(by="measurement_id", inplace=True)
                             print(name)
                             print(sub_df)
