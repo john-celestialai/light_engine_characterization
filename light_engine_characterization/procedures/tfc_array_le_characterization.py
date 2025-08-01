@@ -27,22 +27,19 @@ from light_engine_characterization.tables import (
     database_address,
 )
 
-# TODO: Debug voltage measurement, add MPD current reading
-
-
 # Power corrections to account for switch/connector losses
-power_corr = (1.06987, 1.21548, 1.45471, 1.38559, 2.34974, 1.4391, 1.22897, 1.64761)
+# power_corr = (1.06987, 1.21548, 1.45471, 1.38559, 2.34974, 1.4391, 1.22897, 1.64761)
 
-# teams_address = (
-#     "https://celestialai.webhook.office.com/webhookb2/"
-#     "8cb3d0ed-2d5f-4852-b21f-451dc3552a65@1f01dda0-08ff-4642-9764-7ebe444cecb7/"
-#     "IncomingWebhook/4027f23ded4644c29ccfe49cea069397/"
-#     "4f39bb7b-e2a8-4f49-9421-80a2e79d44e7"
-# )
+teams_address = (
+    "https://celestialai.webhook.office.com/webhookb2/"
+    "8cb3d0ed-2d5f-4852-b21f-451dc3552a65@1f01dda0-08ff-4642-9764-7ebe444cecb7/"
+    "IncomingWebhook/4027f23ded4644c29ccfe49cea069397/"
+    "4f39bb7b-e2a8-4f49-9421-80a2e79d44e7"
+)
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 data_columns = LightEngineMeasurement.__table__.columns.keys()
 data_columns = list(
@@ -73,7 +70,7 @@ def detect_instruments():
     return instruments
 
 
-class MolexLECharacterization(Procedure):
+class TFCArrayCharacterization(Procedure):
     """Procedure for characterizing Molex Light Engines over temperature and bias current."""
 
     # Measurement unique identifiers
@@ -117,7 +114,7 @@ class MolexLECharacterization(Procedure):
     # OSA configuration settings
     wavelength_start = 1565
     wavelength_stop = 1585
-    wavelength_points = 2001
+    wavelength_points = 1001
     wavelength_resolution = 0.03
     resolution_vbw = "1kHz"
 
@@ -178,12 +175,8 @@ class MolexLECharacterization(Procedure):
         self.tec_pid = self.tec.pid_params
         log.debug("Connected to TEC.")
 
-        if self.channel in (3, 7):
-            self.wavelength_start = 1570
-            self.wavelength_stop = 1590
-        else:
-            self.wavelength_start = 1565
-            self.wavelength_stop = 1585
+        self.wavelength_start = 1568
+        self.wavelength_stop = 1578
 
         # Configure the OSA parameters
         self.osa = AnritsuMS9740B(instruments["anritsu"])
@@ -266,7 +259,7 @@ class MolexLECharacterization(Procedure):
             return None
 
         # Select the channel
-        self.switch.set_channel(self.channel)
+        self.switch.set_channel(7 - self.channel)
 
         # Perform the bias sweep
         for j, bias_current in enumerate(self.bias_current_steps):
@@ -283,8 +276,7 @@ class MolexLECharacterization(Procedure):
             # Read the temperatures, voltages, and currents
             tec_temp_c = self.tec.get_temperature()
             # cathode_voltage_v = self.read_voltage()
-            # cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
-            cathode_voltage_v = 0.0
+            cathode_voltage_v = 2 - self.zeus.get_voltage_readout(self.channel)
             ambient_temp_c, light_engine_temp_c = (
                 self.zeus.get_light_engine_temperatures()
             )
@@ -301,13 +293,13 @@ class MolexLECharacterization(Procedure):
 
             wavelength_nm, power_dbm = self.osa.read_memory()
             wavelength_nm = np.array(wavelength_nm)
-            power_dbm = np.array(power_dbm) + power_corr[self.channel]
+            power_dbm = np.array(power_dbm)
             power_uw = 10 ** (power_dbm / 10) * 1000
 
             # Get the spectral peak (wavelength, power)
             osa_peak = self.osa.measure_peak()
             peak_wavelength_nm = osa_peak[0]
-            peak_power_dbm = osa_peak[1] + power_corr[self.channel]
+            peak_power_dbm = osa_peak[1]
             log.debug(f"Peak wavelength: {peak_wavelength_nm}nm, {peak_power_dbm}dBm")
 
             # If the peak power is greater than -30dBm, also measure the SMSR and linewidth
@@ -344,7 +336,7 @@ class MolexLECharacterization(Procedure):
                 "smsr_linewidth_nm": smsr_linewidth_nm,
                 "linewidth_3db_nm": linewidth_3db_nm,
                 "linewidth_20db_nm": linewidth_20db_nm,
-                "sweep_type": "full_power" if self.full_power_enable else "normal",
+                # "sweep_type": "full_power" if self.full_power_enable else "normal",
             }
             # k = i * self.n_bias_steps + j
             self.emit("results", le_measurement)
@@ -405,24 +397,24 @@ class MolexLECharacterization(Procedure):
         super().shutdown()
         log.info("Shutdown procedure complete.")
 
-        # myTeamsMessage = pymsteams.connectorcard(teams_address)
-        # if self.measurement_successful:
-        #     myTeamsMessage.text(
-        #         (
-        #             f"Measurement for light engine {self.light_engine_id}, "
-        #             f"channel {self.channel} started at {self.measurement_time}, "
-        #             f"{self.measurement_date} completed successfully."
-        #         )
-        #     )
-        # else:
-        #     myTeamsMessage.text(
-        #         (
-        #             f"Measurement for light engine {self.light_engine_id}, "
-        #             f"channel {self.channel} started at {self.measurement_time}, "
-        #             f"{self.measurement_date} failed."
-        #         )
-        #     )
-        # myTeamsMessage.send()
+        myTeamsMessage = pymsteams.connectorcard(teams_address)
+        if self.measurement_successful:
+            myTeamsMessage.text(
+                (
+                    f"Measurement for light engine {self.light_engine_id}, "
+                    f"channel {self.channel} started at {self.measurement_time}, "
+                    f"{self.measurement_date} completed successfully."
+                )
+            )
+        else:
+            myTeamsMessage.text(
+                (
+                    f"Measurement for light engine {self.light_engine_id}, "
+                    f"channel {self.channel} started at {self.measurement_time}, "
+                    f"{self.measurement_date} failed."
+                )
+            )
+        myTeamsMessage.send()
 
     def autodetect_instruments(self):
         """Detect all available instruments and their corresponding ports.

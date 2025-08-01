@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import sqlalchemy as sa
-from photonics_db import database_address
+# from photonics_db import database_address
 from sqlalchemy.orm import Session
 
-from light_engine_characterization.tables import LightEngineMeasurement
+from light_engine_characterization.tables import LightEngineMeasurement, TFCMeasurement, database_address
 
 engine = sa.create_engine(database_address + "/john_dev")
 

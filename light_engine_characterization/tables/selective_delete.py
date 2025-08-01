@@ -1,20 +1,19 @@
 """Remove database entries between the specified measurement ids"""
 
 import sqlalchemy as sa
-from photonics_db import database_address
 from sqlalchemy.orm import Session
 
-from light_engine_characterization.tables import LightEngineMeasurement
+from light_engine_characterization.tables import TFCMeasurement, database_address
 
-start_id = 167344
-stop_id = 167844
+start_id = 1
+stop_id = 694
 
-engine = sa.create_engine(database_address + "/john_dev")
+engine = sa.create_engine(database_address)
 
 with Session(engine) as session:
     result = session.execute(
-        sa.delete(LightEngineMeasurement).where(
-            LightEngineMeasurement.measurement_id.between(start_id, stop_id)
+        sa.delete(TFCMeasurement).where(
+            TFCMeasurement.measurement_id.between(start_id, stop_id)
         )
     )
     print(result.rowcount)

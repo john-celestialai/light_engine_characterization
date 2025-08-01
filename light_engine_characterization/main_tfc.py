@@ -21,25 +21,17 @@ from pymeasure.display.Qt import QtWidgets
 from pymeasure.display.windows import ManagedWindow
 from pymeasure.experiment import Results
 
-from procedures import MolexLECharacterization
-
-
-# TODO: Ensure OSA units are set to
+from light_engine_characterization.procedures import TFCCharacterization
 
 
 class MainWindow(ManagedWindow):
 
     def __init__(self):
         super().__init__(
-            procedure_class=MolexLECharacterization,
+            procedure_class=TFCCharacterization,
             inputs=[
                 "light_engine_id",
-                "channel",
-                "full_power_enable",
                 "nominal_temp_c",
-                # "temp_start",
-                # "temp_stop",
-                # "temp_step",
                 "temp_settling_time",
                 "bias_start",
                 "bias_stop",
@@ -50,7 +42,6 @@ class MainWindow(ManagedWindow):
             ],
             displays=[
                 "light_engine_id",
-                "channel",
                 "nominal_temp_c",
                 # "bias_current_ma",
                 # "voltage_v",
@@ -67,12 +58,12 @@ class MainWindow(ManagedWindow):
             x_axis="Bias Current (mA)",
             y_axis="wavelength_peak_nm",
             sequencer=True,
-            sequencer_inputs=["nominal_temp_c", "channel"],
+            sequencer_inputs=["nominal_temp_c"],
         )
-        self.setWindowTitle("Light Engine Characterization")
+        self.setWindowTitle("TFC Single Light Engine Characterization")
 
         self.filename = f"light_engine"
-        self.directory = "~/measurement_data/light_engine/poet/"
+        self.directory = "~/measurement_data/light_engine/tfc/"
         self.store_measurement = True
         self.file_input.extensions = [".csv", ".txt", ".data"]
         self.file_input.filename_fixed = True
@@ -105,7 +96,6 @@ class MainWindow(ManagedWindow):
                 filename_attrs = [
                     self.file_input.filename_base,
                     procedure.light_engine_id,
-                    procedure.channel,
                     procedure.measurement_date,
                     procedure.measurement_time,
                 ]
