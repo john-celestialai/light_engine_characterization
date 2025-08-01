@@ -8,7 +8,7 @@ from light_engine_characterization.tables import LightEngineMeasurement
 
 engine = sa.create_engine(database_address + "/john_dev")
 
-le_ids = [2413302]
+le_ids = [123456]
 # fig, ax = plt.subplots(2)
 with Session(engine) as session:
     for le_id in le_ids:
