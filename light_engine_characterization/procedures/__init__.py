@@ -1,1 +1,3 @@
 from .molex_le_characterization import MolexLECharacterization
+from .tfc_single_le_characterization import TFCCharacterization
+from .tfc_array_le_characterization import TFCArrayCharacterization

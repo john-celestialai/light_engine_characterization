@@ -1,9 +1,13 @@
 import time
 import traceback
-
+import logging
 import paramiko
 from paramiko import SSHClient
 from paramiko_expect import SSHClientInteraction
+
+
+log = logging.getLogger(__name__)
+log.addHandler(logging.NullHandler())
 
 
 class ZeusController:
@@ -65,7 +69,7 @@ class ZeusController:
             interact.send(r"import time")
             interact.expect(PYTHON_PROMPT)
 
-            interact.send("from artemis2 import *")
+            interact.send("from artemis3 import *")
             interact.expect(PYTHON_PROMPT)
             interact.send("power.bypass_asic_check(True)")
             interact.expect(PYTHON_PROMPT)
@@ -115,11 +119,23 @@ class ZeusController:
             "SW_PIC_APROBE_1",
             "SW_PIC_APROBE_2",
         ]
-        query = f"adc.{adc_lut[channel]}.print()"
-        self.write_read(query)
-        answer = self.interact.current_output_clean
-        voltage_v = float(answer.split(" ")[1].split("V")[0])
-        return voltage_v
+        count = 0
+        while count < 3:
+            try:
+                query = f"adc.{adc_lut[channel]}.print()"
+                self.write_read(query)
+                answer = self.interact.current_output_clean
+                print(answer)
+                voltage_v = float(answer.split(" ")[1].split("V")[0])
+                return voltage_v
+            except IndexError as e:
+                time.sleep(1)
+                count += 1
+                log.warning(
+                    f"Failed to get reading from Zeus board, re-attempting {count+1}/3"
+                )
+                continue
+        raise RuntimeError("could not read voltage from Zeus board")
 
     def close(self):
         try:
@@ -153,15 +169,19 @@ if __name__ == "__main__":
     zeus = ZeusController()
     zeus.open_session("pynq1")
     zeus.write_read("fan.set_le_duty_cycle(90)")
-    time.sleep(0.1)
-    # for j in range(8):
-    # print(f"Channel {j}")
-    # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},400)")
-    # time.sleep(0.1)
-    # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
-    # print(voltages)
-    # time.sleep(0.1)
-    # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
+    time.sleep(1)
+    j = 0
+    for j in range(4):
+        print(f"Channel {j}")
+        print("Turning on")
+        zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},200)")
+        # time.sleep(0.1)
+        # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
+        # print(voltages)
+        # time.sleep(2)
+        # zeus.write_read(f"light_engine.set_laser_ma(LEChannel.LE{j},0)")
+        # print("Turning off")
+        # time.sleep(1)
     # time.sleep(0.1)
     # voltages = [zeus.get_voltage_readout(i) for i in range(8)]
     # print(voltages)
